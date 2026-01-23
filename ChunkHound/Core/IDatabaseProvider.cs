@@ -15,7 +15,8 @@ public interface IDatabaseProvider
     /// Stores a batch of chunks in the database.
     /// </summary>
     /// <param name="chunks">The chunks to store.</param>
-    Task StoreChunksAsync(List<Chunk> chunks);
+    /// <returns>The IDs of the stored chunks.</returns>
+    Task<List<int>> StoreChunksAsync(List<Chunk> chunks);
 
     /// <summary>
     /// Retrieves chunks by their content hashes.
