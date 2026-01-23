@@ -5,7 +5,7 @@
       "args": [
         "mcp-server-git",
         "--repository",
-        "https://github.com/gero-robert/ChunkHound-dotnet.git"
+        "."
       ]
     }
   }
