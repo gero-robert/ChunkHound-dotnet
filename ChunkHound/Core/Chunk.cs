@@ -86,6 +86,25 @@ public record Chunk
     /// </summary>
     public Dictionary<string, object>? Metadata { get; init; }
 
+    private const string SYMBOL_FIELD = "symbol";
+    private const string START_LINE_FIELD = "start_line";
+    private const string END_LINE_FIELD = "end_line";
+    private const string CODE_FIELD = "code";
+    private const string CHUNK_TYPE_FIELD = "chunk_type";
+    private const string TYPE_FIELD = "type";
+    private const string FILE_ID_FIELD = "file_id";
+    private const string LANGUAGE_FIELD = "language";
+    private const string LANGUAGE_INFO_FIELD = "language_info";
+    private const string ID_FIELD = "id";
+    private const string FILE_PATH_FIELD = "file_path";
+    private const string PATH_FIELD = "path";
+    private const string PARENT_HEADER_FIELD = "parent_header";
+    private const string START_BYTE_FIELD = "start_byte";
+    private const string END_BYTE_FIELD = "end_byte";
+    private const string CREATED_AT_FIELD = "created_at";
+    private const string UPDATED_AT_FIELD = "updated_at";
+    private const string METADATA_FIELD = "metadata";
+
     /// <summary>
     /// Initializes a new instance of the Chunk class.
     /// </summary>
@@ -247,37 +266,37 @@ public record Chunk
     /// </summary>
     public static Chunk FromDict(Dictionary<string, object> data)
     {
-        var symbol = data.GetValueOrDefault("symbol") as string;
-        var startLine = Convert.ToInt32(data.GetValueOrDefault("start_line") ?? throw new ValidationException("start_line", null, "Start line is required"));
-        var endLine = Convert.ToInt32(data.GetValueOrDefault("end_line") ?? throw new ValidationException("end_line", null, "End line is required"));
-        var code = data.GetValueOrDefault("code") as string ?? throw new ValidationException("code", null, "Code content is required");
-        var fileId = Convert.ToInt32(data.GetValueOrDefault("file_id") ?? throw new ValidationException("file_id", null, "File ID is required"));
+        var symbol = data.GetValueOrDefault(SYMBOL_FIELD) as string;
+        var startLine = Convert.ToInt32(data.GetValueOrDefault(START_LINE_FIELD) ?? throw new ValidationException(START_LINE_FIELD, null, "Start line is required"));
+        var endLine = Convert.ToInt32(data.GetValueOrDefault(END_LINE_FIELD) ?? throw new ValidationException(END_LINE_FIELD, null, "End line is required"));
+        var code = data.GetValueOrDefault(CODE_FIELD) as string ?? throw new ValidationException(CODE_FIELD, null, "Code content is required");
+        var fileId = Convert.ToInt32(data.GetValueOrDefault(FILE_ID_FIELD) ?? throw new ValidationException(FILE_ID_FIELD, null, "File ID is required"));
 
-        var chunkTypeValue = data.GetValueOrDefault("chunk_type") ?? data.GetValueOrDefault("type");
+        var chunkTypeValue = data.GetValueOrDefault(CHUNK_TYPE_FIELD) ?? data.GetValueOrDefault(TYPE_FIELD);
         var chunkType = chunkTypeValue is ChunkType ct ? ct :
                        chunkTypeValue is string s ? ChunkTypeExtensions.FromString(s) :
                        ChunkType.Unknown;
 
-        var languageValue = data.GetValueOrDefault("language") ?? data.GetValueOrDefault("language_info");
+        var languageValue = data.GetValueOrDefault(LANGUAGE_FIELD) ?? data.GetValueOrDefault(LANGUAGE_INFO_FIELD);
         var language = languageValue is Language l ? l :
                       languageValue is string ls ? LanguageExtensions.FromString(ls) :
                       Language.Unknown;
 
-        var id = data.GetValueOrDefault("id") is int i ? (int?)i : null;
-        var filePath = (data.GetValueOrDefault("file_path") ?? data.GetValueOrDefault("path")) as string;
-        var parentHeader = data.GetValueOrDefault("parent_header") as string;
-        var startByte = data.GetValueOrDefault("start_byte") is long sb ? (long?)sb : null;
-        var endByte = data.GetValueOrDefault("end_byte") is long eb ? (long?)eb : null;
+        var id = data.GetValueOrDefault(ID_FIELD) is int i ? (int?)i : null;
+        var filePath = (data.GetValueOrDefault(FILE_PATH_FIELD) ?? data.GetValueOrDefault(PATH_FIELD)) as string;
+        var parentHeader = data.GetValueOrDefault(PARENT_HEADER_FIELD) as string;
+        var startByte = data.GetValueOrDefault(START_BYTE_FIELD) is long sb ? (long?)sb : null;
+        var endByte = data.GetValueOrDefault(END_BYTE_FIELD) is long eb ? (long?)eb : null;
 
         DateTime? createdAt = null;
-        if (data.GetValueOrDefault("created_at") is string cas)
+        if (data.GetValueOrDefault(CREATED_AT_FIELD) is string cas)
             createdAt = DateTime.Parse(cas);
 
         DateTime? updatedAt = null;
-        if (data.GetValueOrDefault("updated_at") is string uas)
+        if (data.GetValueOrDefault(UPDATED_AT_FIELD) is string uas)
             updatedAt = DateTime.Parse(uas);
 
-        var metadata = data.GetValueOrDefault("metadata") as Dictionary<string, object>;
+        var metadata = data.GetValueOrDefault(METADATA_FIELD) as Dictionary<string, object>;
 
         return new Chunk(
             symbol, startLine, endLine, code, chunkType, fileId, language,
@@ -291,23 +310,23 @@ public record Chunk
     {
         var result = new Dictionary<string, object>
         {
-            ["symbol"] = Symbol!, // Symbol can be null, which is expected
-            ["start_line"] = StartLine,
-            ["end_line"] = EndLine,
-            ["code"] = Code,
-            ["chunk_type"] = ChunkType.Value(),
-            ["file_id"] = FileId,
-            ["language"] = Language.Value()
+            [SYMBOL_FIELD] = Symbol!, // Symbol can be null, which is expected
+            [START_LINE_FIELD] = StartLine,
+            [END_LINE_FIELD] = EndLine,
+            [CODE_FIELD] = Code,
+            [CHUNK_TYPE_FIELD] = ChunkType.Value(),
+            [FILE_ID_FIELD] = FileId,
+            [LANGUAGE_FIELD] = Language.Value()
         };
 
-        if (Id.HasValue) result["id"] = Id.Value;
-        if (FilePath != null) result["file_path"] = FilePath;
-        if (ParentHeader != null) result["parent_header"] = ParentHeader;
-        if (StartByte.HasValue) result["start_byte"] = StartByte.Value;
-        if (EndByte.HasValue) result["end_byte"] = EndByte.Value;
-        if (CreatedAt.HasValue) result["created_at"] = CreatedAt.Value.ToString("O");
-        if (UpdatedAt.HasValue) result["updated_at"] = UpdatedAt.Value.ToString("O");
-        if (Metadata != null) result["metadata"] = Metadata;
+        if (Id.HasValue) result[ID_FIELD] = Id.Value;
+        if (FilePath != null) result[FILE_PATH_FIELD] = FilePath;
+        if (ParentHeader != null) result[PARENT_HEADER_FIELD] = ParentHeader;
+        if (StartByte.HasValue) result[START_BYTE_FIELD] = StartByte.Value;
+        if (EndByte.HasValue) result[END_BYTE_FIELD] = EndByte.Value;
+        if (CreatedAt.HasValue) result[CREATED_AT_FIELD] = CreatedAt.Value.ToString("O");
+        if (UpdatedAt.HasValue) result[UPDATED_AT_FIELD] = UpdatedAt.Value.ToString("O");
+        if (Metadata != null) result[METADATA_FIELD] = Metadata;
 
         return result;
     }

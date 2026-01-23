@@ -30,18 +30,58 @@ Each test method must include a comment describing the specific use cases it tes
 1. **Mandatory comments**: Every test method should start with a comment explaining what use cases or scenarios it covers.
 2. **Avoid redundancy**: Before writing a new test, review existing tests to ensure it doesn't duplicate coverage.
 3. **Value-driven**: Focus on tests that validate meaningful behavior, not just code paths.
-4. **Avoid low-value tests**: Be cautious of unit tests that test trivial implementation details like constructors or property getters/setters, especially if they are redundant when covered by higher-level integration tests. Such tests may be prone to frequent changes due to syntax modifications and provide little value. Focus on tests that validate meaningful behavior or integration points.
+4. **Test Value Assessment Framework**: Before writing a test, evaluate:
+   - **Business Value**: Does this test validate a business rule, invariant, or user requirement?
+   - **Integration Coverage**: Is this behavior already covered by integration or E2E tests?
+   - **Change Frequency**: How often does this code change? (Avoid testing volatile implementation details)
+   - **Failure Impact**: What would break if this test fails? (High impact = high value)
 
-### Example:
+### What NOT to Test (Low-Value Examples):
+- **Constructor assignment tests**: Testing that `new Object(param)` assigns `param` to a property
+- **Simple property getters/setters**: Testing that `obj.Property` returns the assigned value
+- **Trivial calculations**: Testing `end - start + 1` without business context
+- **Basic enum logic**: Testing `IsCodeChunk()` returns true for code types (unless it has complex business logic)
+- **Range checks**: Testing `ContainsLine(line)` for obvious cases without edge cases
+
+### What TO Test (High-Value Examples):
+- **Validation logic**: Constructor throws on invalid parameters (business rules)
+- **Serialization/Deserialization**: `FromDict`/`ToDict` correctly handles data transformation
+- **Immutability**: `WithId()` creates new instance without mutating original
+- **Complex business logic**: Multi-step calculations with business significance
+- **Edge cases**: Boundary conditions that could cause real bugs
+- **Integration points**: How components interact, especially across module boundaries
+
+### Test Categories by Value:
+- **Critical**: Validation, serialization, immutability, error handling
+- **High**: Complex algorithms, state transitions, integration behaviors
+- **Medium**: Edge cases, boundary conditions, error scenarios
+- **Low**: Basic assignments, trivial getters, obvious calculations
+- **None**: Tests that duplicate integration coverage or test volatile internals
+
+### Example of High-Value Test:
 ```csharp
 /// <summary>
-/// Tests that File.FromDict correctly parses a dictionary with all required fields,
-/// including created_at and updated_at timestamps.
+/// Tests that Chunk constructor validates line ranges according to business rules:
+/// start line must be positive and end line must be >= start line.
+/// This prevents invalid chunks that could break parsing logic.
 /// </summary>
 [Test]
-public void FromDict_WithValidData_CreatesFile()
+public void Constructor_InvalidLineRange_ThrowsValidationException()
 {
-    // Test implementation
+    // Test implementation - validates business invariant
+}
+```
+
+### Example of Low-Value Test (AVOID):
+```csharp
+/// <summary>
+/// Tests that LineCount property returns the correct number of lines.
+/// </summary>
+[Test]
+public void LineCount_ReturnsCorrectCount() // DON'T WRITE THIS
+{
+    var chunk = new Chunk("test", 5, 15, "code", ChunkType.Function, 1, Language.CSharp);
+    Assert.Equal(11, chunk.LineCount); // 15 - 5 + 1 - trivial calculation
 }
 ```
 
@@ -49,4 +89,5 @@ public void FromDict_WithValidData_CreatesFile()
 - **Prevents duplication**: Clear descriptions help identify overlapping tests.
 - **Ensures value**: Forces consideration of whether the test adds meaningful coverage.
 - **Maintainability**: Makes it easier to understand and refactor tests over time.
+- **Cost Efficiency**: Avoids wasting time on tests that don't catch real bugs.
 
