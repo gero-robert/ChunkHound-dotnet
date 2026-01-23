@@ -65,5 +65,27 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
         return result;
     }
 
+    /// <summary>
+    /// Inserts a batch of chunks into the in-memory database.
+    /// </summary>
+    /// <param name="chunks">The chunks to insert.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The IDs of the inserted chunks.</returns>
+    public async Task<List<int>> InsertChunksBatchAsync(List<Core.Chunk> chunks, CancellationToken cancellationToken = default)
+    {
+        return await StoreChunksAsync(chunks);
+    }
 
+    /// <summary>
+    /// Inserts a batch of embeddings associated with chunk IDs.
+    /// </summary>
+    /// <param name="chunkIds">The chunk IDs.</param>
+    /// <param name="embeddings">The embeddings to insert.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of embeddings inserted.</returns>
+    public async Task<int> InsertEmbeddingsBatchAsync(List<int> chunkIds, List<List<float>> embeddings, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken); // Simulate minimal latency
+        return embeddings.Count;
+    }
 }

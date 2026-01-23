@@ -40,4 +40,23 @@ public class DatabaseProvider : IDatabaseProvider
         // Stub implementation - returns empty list
         return Task.FromResult(new List<Chunk>());
     }
+
+    public Task<List<int>> InsertChunksBatchAsync(List<Chunk> chunks, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Inserting batch of {Count} chunks", chunks.Count);
+        // Stub implementation - return dummy IDs
+        var ids = new List<int>();
+        for (int i = 0; i < chunks.Count; i++)
+        {
+            ids.Add(i + 1); // Dummy IDs starting from 1
+        }
+        return Task.FromResult(ids);
+    }
+
+    public Task<int> InsertEmbeddingsBatchAsync(List<int> chunkIds, List<List<float>> embeddings, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Inserting batch of {Count} embeddings", embeddings.Count);
+        // Stub implementation - return count
+        return Task.FromResult(embeddings.Count);
+    }
 }

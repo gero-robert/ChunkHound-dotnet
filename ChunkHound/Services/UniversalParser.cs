@@ -101,7 +101,7 @@ public class UniversalParser : IUniversalParser
             var shouldStartNewChunk = ShouldStartNewChunk(trimmedLine, file.Language);
 
             // Check chunk size limits to prevent oversized chunks
-            if (currentChunkLines.Any())
+            if (currentChunkLines.Count != 0)
             {
                 var currentContent = string.Join("\n", currentChunkLines) + "\n" + line;
                 var metrics = CalculateChunkMetrics(currentContent);
@@ -111,7 +111,7 @@ public class UniversalParser : IUniversalParser
                 }
             }
 
-            if (shouldStartNewChunk && currentChunkLines.Any())
+            if (shouldStartNewChunk && currentChunkLines.Count != 0)
             {
                 // Create chunk from accumulated lines
                 var chunkContent = string.Join("\n", currentChunkLines);
@@ -132,7 +132,7 @@ public class UniversalParser : IUniversalParser
         }
 
         // Handle last chunk
-        if (currentChunkLines.Any())
+        if (currentChunkLines.Count != 0)
         {
             var chunkContent = string.Join("\n", currentChunkLines);
             var chunk = CreateChunkFromLines(chunkContent, currentStartLine, lineNum - 1, file);
@@ -360,7 +360,7 @@ public class UniversalParser : IUniversalParser
         }
 
         // Add remaining lines
-        if (currentLines.Any())
+        if (currentLines.Count != 0)
         {
             var chunkContent = string.Join("\n", currentLines);
             var newChunk = new Chunk(

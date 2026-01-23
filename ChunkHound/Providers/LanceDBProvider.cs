@@ -364,6 +364,32 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
     }
 
     /// <summary>
+    /// Inserts a batch of chunks into the database.
+    /// </summary>
+    /// <param name="chunks">The chunks to insert.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The IDs of the inserted chunks.</returns>
+    public async Task<List<int>> InsertChunksBatchAsync(List<Chunk> chunks, CancellationToken cancellationToken = default)
+    {
+        return await StoreChunksAsync(chunks);
+    }
+
+    /// <summary>
+    /// Inserts a batch of embeddings associated with chunk IDs.
+    /// </summary>
+    /// <param name="chunkIds">The chunk IDs.</param>
+    /// <param name="embeddings">The embeddings to insert.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of embeddings inserted.</returns>
+    public async Task<int> InsertEmbeddingsBatchAsync(List<int> chunkIds, List<List<float>> embeddings, CancellationToken cancellationToken = default)
+    {
+        // Placeholder: Insert embeddings
+        // This would typically create or update an embeddings table
+        await Task.Delay(1, cancellationToken);
+        return embeddings.Count;
+    }
+
+    /// <summary>
     /// Disposes the provider and releases resources.
     /// </summary>
     public void Dispose()

@@ -11,6 +11,16 @@ public class FakeConstantEmbeddingProvider : Core.IEmbeddingProvider
     private readonly float[] _constantVector;
 
     /// <summary>
+    /// Gets the name of the embedding provider.
+    /// </summary>
+    public string ProviderName => "FakeConstant";
+
+    /// <summary>
+    /// Gets the model name/version used by the provider.
+    /// </summary>
+    public string ModelName => "constant-v1";
+
+    /// <summary>
     /// Initializes a new instance of the FakeConstantEmbeddingProvider class.
     /// </summary>
     /// <param name="dimensions">The number of dimensions for the embedding vectors. Default is 1536 (OpenAI default).</param>
@@ -24,10 +34,11 @@ public class FakeConstantEmbeddingProvider : Core.IEmbeddingProvider
     /// Generates constant embeddings for a list of texts.
     /// </summary>
     /// <param name="texts">The texts to embed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A list of constant embeddings, one for each input text.</returns>
-    public async Task<List<List<float>>> EmbedAsync(List<string> texts)
+    public async Task<List<List<float>>> EmbedAsync(List<string> texts, CancellationToken cancellationToken = default)
     {
-        await Task.Delay(1); // Simulate minimal latency
+        await Task.Delay(1, cancellationToken); // Simulate minimal latency
         return texts.Select(_ => _constantVector.ToList()).ToList();
     }
 }
