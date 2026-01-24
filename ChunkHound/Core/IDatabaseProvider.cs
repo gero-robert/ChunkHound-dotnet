@@ -86,6 +86,22 @@ public interface IDatabaseProvider
     Task<List<Chunk>> GetChunksByIdsAsync(IReadOnlyList<long> chunkIds, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets a file by its path.
+    /// </summary>
+    /// <param name="filePath">The file path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The file if found, null otherwise.</returns>
+    Task<File?> GetFileByPathAsync(string filePath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Inserts or updates a file record.
+    /// </summary>
+    /// <param name="file">The file to insert or update.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The file ID.</returns>
+    Task<int> UpsertFileAsync(File file, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Optimizes database tables.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>

@@ -422,6 +422,26 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         return new List<Chunk>();
     }
 
+    /// <summary>
+    /// Gets a file by its path.
+    /// </summary>
+    public async Task<Core.File?> GetFileByPathAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        // Placeholder
+        await Task.Delay(1, cancellationToken);
+        return null;
+    }
+
+    /// <summary>
+    /// Inserts or updates a file record.
+    /// </summary>
+    public async Task<int> UpsertFileAsync(Core.File file, CancellationToken cancellationToken = default)
+    {
+        // Placeholder
+        await Task.Delay(1, cancellationToken);
+        return file.Id ?? 1;
+    }
+
     public async Task OptimizeTablesAsync(CancellationToken cancellationToken = default)
     {
         await OptimizeTablesAsync();

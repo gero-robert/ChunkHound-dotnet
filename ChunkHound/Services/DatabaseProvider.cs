@@ -1,5 +1,6 @@
 using ChunkHound.Core;
 using Microsoft.Extensions.Logging;
+using FileModel = ChunkHound.Core.File;
 
 namespace ChunkHound.Services;
 
@@ -88,6 +89,20 @@ public class DatabaseProvider : IDatabaseProvider
     {
         _logger.LogInformation("Getting chunks for {Count} IDs", chunkIds.Count);
         return Task.FromResult(new List<Chunk>());
+    }
+
+    public Task<FileModel?> GetFileByPathAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting file by path {FilePath}", filePath);
+        // Stub implementation - return null
+        return Task.FromResult<FileModel?>(null);
+    }
+
+    public Task<int> UpsertFileAsync(FileModel file, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Upserting file {FilePath}", file.Path);
+        // Stub implementation - return dummy ID
+        return Task.FromResult(1);
     }
 
     public Task OptimizeTablesAsync(CancellationToken cancellationToken = default)

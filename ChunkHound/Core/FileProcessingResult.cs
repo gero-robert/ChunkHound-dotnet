@@ -7,7 +7,10 @@ namespace ChunkHound.Core
     {
         Success,
         Error,
-        PermanentFailure
+        PermanentFailure,
+        UnsupportedLanguage,
+        NoParser,
+        NoChunks
     }
 
     /// <summary>
@@ -24,5 +27,20 @@ namespace ChunkHound.Core
         /// Error message if processing failed.
         /// </summary>
         public string? Error { get; init; }
+
+        /// <summary>
+        /// Number of chunks processed from the file.
+        /// </summary>
+        public int ChunksProcessed { get; init; }
+
+        /// <summary>
+        /// Number of chunks stored in the database.
+        /// </summary>
+        public int ChunksStored { get; init; }
+
+        /// <summary>
+        /// The file ID assigned during processing.
+        /// </summary>
+        public int FileId { get; init; }
     }
 }

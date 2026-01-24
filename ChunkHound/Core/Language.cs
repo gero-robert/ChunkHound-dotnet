@@ -10,8 +10,12 @@ public enum Language
     JavaScript,
     TypeScript,
     Java,
+    C,
+    Cpp,
     Go,
     Rust,
+    PHP,
+    Ruby,
     /// <summary>
     /// Unknown or unsupported language
     /// </summary>
@@ -33,8 +37,12 @@ public static class LanguageExtensions
         Language.JavaScript => ".js",
         Language.TypeScript => ".ts",
         Language.Java => ".java",
+        Language.C => ".c",
+        Language.Cpp => ".cpp",
         Language.Go => ".go",
         Language.Rust => ".rs",
+        Language.PHP => ".php",
+        Language.Ruby => ".rb",
         _ => throw new ArgumentOutOfRangeException(nameof(language))
     };
 
@@ -48,8 +56,12 @@ public static class LanguageExtensions
         Language.JavaScript => "javascript",
         Language.TypeScript => "typescript",
         Language.Java => "java",
+        Language.C => "c",
+        Language.Cpp => "cpp",
         Language.Go => "go",
         Language.Rust => "rust",
+        Language.PHP => "php",
+        Language.Ruby => "ruby",
         _ => throw new ArgumentOutOfRangeException(nameof(language))
     };
 
@@ -63,8 +75,12 @@ public static class LanguageExtensions
         "javascript" or "js" => Language.JavaScript,
         "typescript" or "ts" => Language.TypeScript,
         "java" => Language.Java,
+        "c" => Language.C,
+        "cpp" or "c++" => Language.Cpp,
         "go" => Language.Go,
         "rust" or "rs" => Language.Rust,
+        "php" => Language.PHP,
+        "ruby" or "rb" => Language.Ruby,
         _ => Language.Unknown
     };
 }

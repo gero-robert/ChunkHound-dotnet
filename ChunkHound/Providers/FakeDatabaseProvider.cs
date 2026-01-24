@@ -133,6 +133,24 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
     }
 
     /// <summary>
+    /// Gets a file by its path.
+    /// </summary>
+    public async Task<Core.File?> GetFileByPathAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken);
+        return null; // Fake provider doesn't store files
+    }
+
+    /// <summary>
+    /// Inserts or updates a file record.
+    /// </summary>
+    public async Task<int> UpsertFileAsync(Core.File file, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken);
+        return file.Id ?? 1; // Return existing ID or dummy ID
+    }
+
+    /// <summary>
     /// Optimizes database tables.
     /// </summary>
     public async Task OptimizeTablesAsync(CancellationToken cancellationToken = default)
