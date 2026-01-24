@@ -47,21 +47,29 @@ public class EmbedWorker : WorkerBase, IEmbedWorker, IDisposable
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                // Collect batch
-                while (batch.Count < _config.BatchSize && _chunksQueue.TryDequeue(out var chunk))
+                try
                 {
-                    batch.Add(chunk);
-                }
+                    // Collect batch
+                    while (batch.Count < _config.BatchSize && _chunksQueue.TryDequeue(out var chunk))
+                    {
+                        batch.Add(chunk);
+                    }
 
-                if (batch.Count != 0)
-                {
-                    await ProcessBatchAsync(batch, cancellationToken);
-                    batch.Clear();
+                    if (batch.Count != 0)
+                    {
+                        await ProcessBatchAsync(batch, cancellationToken);
+                        batch.Clear();
+                    }
+                    else
+                    {
+                        // Small delay to prevent busy waiting
+                        await Task.Delay(_config.BusyWaitDelayMs, cancellationToken);
+                    }
                 }
-                else
+                catch (OperationCanceledException)
                 {
-                    // Small delay to prevent busy waiting
-                    await Task.Delay(_config.BusyWaitDelayMs, cancellationToken);
+                    // Normal cancellation, break the loop
+                    break;
                 }
             }
         }

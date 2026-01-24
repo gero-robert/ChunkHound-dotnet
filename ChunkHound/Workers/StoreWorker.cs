@@ -47,21 +47,29 @@ public class StoreWorker : WorkerBase, IStoreWorker, IDisposable
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                // Collect batch
-                while (batch.Count < _config.BatchSize && _embedChunksQueue.TryDequeue(out var embedChunk))
+                try
                 {
-                    batch.Add(embedChunk);
-                }
+                    // Collect batch
+                    while (batch.Count < _config.BatchSize && _embedChunksQueue.TryDequeue(out var embedChunk))
+                    {
+                        batch.Add(embedChunk);
+                    }
 
-                if (batch.Count != 0)
-                {
-                    await ProcessBatchAsync(batch, cancellationToken);
-                    batch.Clear();
+                    if (batch.Count != 0)
+                    {
+                        await ProcessBatchAsync(batch, cancellationToken);
+                        batch.Clear();
+                    }
+                    else
+                    {
+                        // Small delay to prevent busy waiting
+                        await Task.Delay(_config.BusyWaitDelayMs, cancellationToken);
+                    }
                 }
-                else
+                catch (OperationCanceledException)
                 {
-                    // Small delay to prevent busy waiting
-                    await Task.Delay(_config.BusyWaitDelayMs, cancellationToken);
+                    // Normal cancellation, break the loop
+                    break;
                 }
             }
         }

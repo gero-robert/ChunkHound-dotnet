@@ -1,0 +1,132 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Run tests with coverage
+      run: dotnet test --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+    - name: Generate coverage report
+      run: |
+        dotnet tool install -g dotnet-reportgenerator-globaltool
+        reportgenerator -reports:./coverage/**/coverage.cobertura.xml -targetdir:./coverage-report -reporttypes:Html
+
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: ./coverage-report/
+
+    - name: Check code coverage
+      run: |
+        # Extract coverage percentage from coverage report
+        COVERAGE=$(grep -oP '(?<=Line coverage: )\d+\.\d+' ./coverage-report/index.html | head -1)
+        echo "Code coverage: $COVERAGE%"
+        # Check if coverage is above 90%
+        if (( $(echo "$COVERAGE >= 90" | bc -l) )); then
+          echo "✅ Code coverage meets target: $COVERAGE% >= 90%"
+        else
+          echo "❌ Code coverage below target: $COVERAGE% < 90%"
+          exit 1
+        fi
+
+  performance-benchmarks:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, 'benchmark'))
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build benchmarks
+      run: dotnet build --configuration Release --no-restore ChunkHound.Tests/ChunkHound.Tests.csproj
+
+    - name: Run benchmarks
+      run: dotnet run --project ChunkHound.Tests --configuration Release -- --filter "*Benchmark*"
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: ./BenchmarkDotNet.Artifacts/
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Run integration tests
+      run: dotnet test --configuration Release --no-build --filter "Integration" --verbosity normal
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build-and-test, performance-benchmarks, integration-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Publish
+      run: dotnet publish ChunkHound/ChunkHound.csproj --configuration Release --output ./publish
+
+    - name: Create deployment package
+      run: |
+        cd ./publish
+        tar -czf ../chunkhound-dotnet.tar.gz .
+
+    - name: Upload deployment package
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-package
+        path: ./chunkhound-dotnet.tar.gz
+
+    - name: Deploy to staging (placeholder)
+      run: |
+        echo "Deployment to staging environment would happen here"
+        # Add actual deployment steps based on your infrastructure

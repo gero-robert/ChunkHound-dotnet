@@ -47,3 +47,11 @@ packages/
 *.db
 *.db-shm
 *.db-wal
+
+# Coverage reports
+coverage-report/
+coverage/
+
+# chunkhound
+.chunkhound/
+.chunkhound1/

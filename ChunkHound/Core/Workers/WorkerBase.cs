@@ -45,9 +45,10 @@ public abstract class WorkerBase : IDisposable
         {
             await ExecuteAsync(linkedCts.Token);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
             _logger.LogInformation("{WorkerType} cancelled gracefully", GetType().Name);
+            throw new OperationCanceledException("Operation was canceled", ex);
         }
         catch (Exception ex)
         {

@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using ChunkHound.Core;
+using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.Logging;
 using FileModel = ChunkHound.Core.File;
 
@@ -68,7 +69,7 @@ public class IndexingCoordinator : IIndexingCoordinator
         _embedChunksChannel = Channel.CreateUnbounded<EmbedChunk>();
 
         // Initialize synchronization primitives
-        _dbLock = new ReaderWriterLockSlim();
+        _dbLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
         _fileLocks = new ConcurrentDictionary<string, SemaphoreSlim>();
         _cancellationTokenSource = new CancellationTokenSource();
     }
@@ -95,6 +96,8 @@ public class IndexingCoordinator : IIndexingCoordinator
         List<string>? excludePatterns = null,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var stopwatch = Stopwatch.StartNew();
 
         try
@@ -104,7 +107,7 @@ public class IndexingCoordinator : IIndexingCoordinator
             // Phase 1: Discovery
             var files = await DiscoverFilesAsync(directory, patterns, excludePatterns, cancellationToken);
 
-            if (!files.Any())
+            if (files.Count == 0)
             {
                 return new IndexingResult { Status = IndexingStatus.NoFiles };
             }
@@ -120,6 +123,10 @@ public class IndexingCoordinator : IIndexingCoordinator
 
             stopwatch.Stop();
             return result with { DurationMs = stopwatch.ElapsedMilliseconds };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -173,7 +180,7 @@ public class IndexingCoordinator : IIndexingCoordinator
 
             // Parse file
             var chunks = await parser.ParseAsync(file);
-            if (!chunks.Any())
+            if (chunks.Count == 0)
             {
                 return new FileProcessingResult { Status = FileProcessingStatus.NoChunks };
             }
@@ -202,13 +209,6 @@ public class IndexingCoordinator : IIndexingCoordinator
         List<string> files,
         CancellationToken cancellationToken)
     {
-        // Write all files to channel
-        foreach (var file in files)
-        {
-            await _filesChannel.Writer.WriteAsync(file, cancellationToken);
-        }
-        _filesChannel.Writer.Complete();
-
         // Start worker tasks
         var parseWorkers = Enumerable.Range(0, _config?.ParseWorkers ?? 4)
             .Select(_ => Task.Run(() => ParseWorkerAsync(cancellationToken)))
@@ -219,20 +219,45 @@ public class IndexingCoordinator : IIndexingCoordinator
                 .Select(_ => Task.Run(() => EmbedWorkerAsync(cancellationToken)))
                 .ToArray() : Array.Empty<Task>();
 
-        var storeWorkers = Enumerable.Range(0, _config?.StoreWorkers ?? 2)
-            .Select(_ => Task.Run(() => StoreWorkerAsync(cancellationToken)))
-            .ToArray();
-
-        // Wait for parse workers to complete and complete chunks channel
-        await Task.WhenAll(parseWorkers);
-        _chunksChannel.Writer.Complete();
-
-        // Wait for embed workers to complete and complete embed chunks channel
-        if (embedWorkers.Any())
+        var storeWorkers = new List<Task>();
+        for (int i = 0; i < (_config?.StoreWorkers ?? 2); i++)
         {
-            await Task.WhenAll(embedWorkers);
+            storeWorkers.Add(Task.Run(() => StoreWorkerAsync(cancellationToken)));
         }
-        _embedChunksChannel.Writer.Complete();
+
+        // Write all files to channel
+        foreach (var file in files)
+        {
+            await _filesChannel.Writer.WriteAsync(file, cancellationToken);
+        }
+        _filesChannel.Writer.Complete();
+
+        // Give store workers a chance to start
+        await Task.Yield();
+        await Task.Delay(100);
+
+        // Wait for parse workers to complete
+        await Task.WhenAll(parseWorkers);
+
+        if (_embeddingProvider == null)
+        {
+            // Give store workers a chance to start reading
+            await Task.Delay(10);
+            // Complete chunks channel for store workers
+            _chunksChannel.Writer.Complete();
+        }
+        else
+        {
+            // Complete chunks channel for embed workers
+            _chunksChannel.Writer.Complete();
+
+            // Wait for embed workers to complete and complete embed chunks channel
+            if (embedWorkers.Any())
+            {
+                await Task.WhenAll(embedWorkers);
+            }
+            _embedChunksChannel.Writer.Complete();
+        }
 
         // Wait for store workers to complete
         await Task.WhenAll(storeWorkers);
@@ -282,7 +307,7 @@ public class IndexingCoordinator : IIndexingCoordinator
                     batch.Add(chunk);
                 }
 
-                if (batch.Any())
+                if (batch.Count != 0)
                 {
                     try
                     {
@@ -317,24 +342,117 @@ public class IndexingCoordinator : IIndexingCoordinator
     }
 
     /// <summary>
-    /// Worker that reads embed chunks from channel and stores them in the database.
+    /// Worker that reads chunks or embed chunks from channel and stores them in the database.
     /// </summary>
     private async Task StoreWorkerAsync(CancellationToken cancellationToken)
     {
-        var batch = new List<EmbedChunk>();
         var batchSize = _config?.DatabaseBatchSize ?? 1000;
 
         try
         {
-            while (await _embedChunksChannel.Reader.WaitToReadAsync(cancellationToken))
+            if (_embeddingProvider == null)
             {
-                // Collect available embed chunks up to batch size
-                while (batch.Count < batchSize && _embedChunksChannel.Reader.TryRead(out var embedChunk))
+                // Read chunks directly
+                var chunksBatch = new List<Chunk>();
+                while (await _chunksChannel.Reader.WaitToReadAsync(cancellationToken))
                 {
-                    batch.Add(embedChunk);
+                    // Collect available chunks up to batch size
+                    while (chunksBatch.Count < batchSize && _chunksChannel.Reader.TryRead(out var chunk))
+                    {
+                        chunksBatch.Add(chunk);
+                    }
+
+                    if (chunksBatch.Count != 0)
+                    {
+                        try
+                        {
+                            await ExecuteWithLockAsync(async () =>
+                            {
+                                var chunkIds = await _databaseProvider.InsertChunksBatchAsync(chunksBatch, cancellationToken);
+
+                                Interlocked.Add(ref _chunksStored, chunkIds.Count);
+                                return chunkIds.Count;
+                            }, writeLock: true, cancellationToken);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Store worker failed for batch of {Count} chunks", chunksBatch.Count);
+                        }
+                        finally
+                        {
+                            chunksBatch.Clear();
+                        }
+                    }
                 }
 
-                if (batch.Any())
+                // Process any remaining chunks in the batch
+                if (chunksBatch.Count != 0)
+                {
+                    try
+                    {
+                        await ExecuteWithLockAsync(async () =>
+                        {
+                            var chunkIds = await _databaseProvider.InsertChunksBatchAsync(chunksBatch, cancellationToken);
+
+                            Interlocked.Add(ref _chunksStored, chunkIds.Count);
+                            return chunkIds.Count;
+                        }, writeLock: true, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Store worker failed for remaining batch of {Count} chunks", chunksBatch.Count);
+                    }
+                    finally
+                    {
+                        chunksBatch.Clear();
+                    }
+                }
+            }
+            else
+            {
+                // Read embed chunks
+                var batch = new List<EmbedChunk>();
+                while (await _embedChunksChannel.Reader.WaitToReadAsync(cancellationToken))
+                {
+                    // Collect available embed chunks up to batch size
+                    while (batch.Count < batchSize && _embedChunksChannel.Reader.TryRead(out var embedChunk))
+                    {
+                        batch.Add(embedChunk);
+                    }
+
+                    if (batch.Count != 0)
+                    {
+                        try
+                        {
+                            await ExecuteWithLockAsync(async () =>
+                            {
+                                var chunks = batch.Select(ec => ec.Chunk).ToList();
+                                var embeddings = batch.Select(ec => ec.Embedding).ToList();
+
+                                var chunkIds = await _databaseProvider.InsertChunksBatchAsync(chunks, cancellationToken);
+
+                                if (_embeddingProvider != null)
+                                {
+                                    await _databaseProvider.InsertEmbeddingsBatchAsync(chunkIds, embeddings, cancellationToken);
+                                }
+
+                                Interlocked.Add(ref _chunksStored, chunkIds.Count);
+                                return chunkIds.Count;
+                            }, writeLock: true, cancellationToken);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Store worker failed for batch of {Count} chunks", batch.Count);
+                        }
+                        finally
+                        {
+                            batch.Clear();
+                        }
+                    }
+                }
+
+                // Process any remaining embed chunks in the batch
+                if (batch.Count != 0)
                 {
                     try
                     {
@@ -356,11 +474,7 @@ public class IndexingCoordinator : IIndexingCoordinator
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Store worker failed for batch of {Count} chunks", batch.Count);
-                    }
-                    finally
-                    {
-                        batch.Clear();
+                        _logger.LogError(ex, "Store worker failed for remaining batch of {Count} embed chunks", batch.Count);
                     }
                 }
             }
@@ -575,33 +689,26 @@ public class IndexingCoordinator : IIndexingCoordinator
         // Check exclude patterns first
         if (excludePatterns != null)
         {
-            foreach (var pattern in excludePatterns)
+            var excludeMatcher = new Matcher();
+            excludeMatcher.AddIncludePatterns(excludePatterns);
+            if (excludeMatcher.Match(fileName).HasMatches)
             {
-                if (fileName.Contains(pattern) || filePath.Contains(pattern))
-                {
-                    return false;
-                }
+                return false;
             }
         }
 
         // If no patterns specified, include common code files
-        if (patterns == null || !patterns.Any())
+        if (patterns == null || patterns.Count == 0)
         {
             var extension = Path.GetExtension(filePath).ToLowerInvariant();
             return new[] { ".cs", ".py", ".js", ".ts", ".java", ".cpp", ".c", ".go", ".rs", ".php", ".rb" }
                 .Contains(extension);
         }
 
-        // Check include patterns
-        foreach (var pattern in patterns)
-        {
-            if (fileName.Contains(pattern) || filePath.Contains(pattern))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        // Check include patterns using glob matching
+        var includeMatcher = new Matcher();
+        includeMatcher.AddIncludePatterns(patterns);
+        return includeMatcher.Match(fileName).HasMatches;
     }
 
     /// <summary>

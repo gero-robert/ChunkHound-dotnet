@@ -149,9 +149,15 @@ namespace TestNamespace
     public async Task BackpressureManagement_EmbedWorkerBatchSize_RespectsLimits()
     {
         // Arrange
-        var embedProvider = new FakeConstantEmbeddingProvider();
+        var embedProviderMock = new Mock<IEmbeddingProvider>();
+        embedProviderMock.Setup(p => p.ProviderName).Returns("MockProvider");
+        embedProviderMock.Setup(p => p.ModelName).Returns("mock-v1");
+        embedProviderMock.Setup(p => p.EmbedAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((List<string> texts, CancellationToken _) =>
+                texts.Select(_ => new List<float> { 0.1f, 0.2f, 0.3f }).ToList());
+
         var embedConfig = new WorkerConfig { BatchSize = 5 };
-        var embedWorker = new EmbedWorker(embedProvider, _chunksQueue, _embedChunksQueue, logger: _embedLogger.Object, config: embedConfig);
+        var embedWorker = new EmbedWorker(embedProviderMock.Object, _chunksQueue, _embedChunksQueue, logger: _embedLogger.Object, config: embedConfig);
 
         // Add more chunks than batch size
         for (int i = 0; i < 12; i++)
@@ -165,8 +171,11 @@ namespace TestNamespace
         await embedWorker.StartAsync(cts.Token);
 
         // Assert
-        // Should process in batches of 5
-        Assert.True(_embedChunksQueue.Count >= 10, "Should process multiple batches");
+        // Verify that EmbedAsync was called with batches of size <= 5
+        embedProviderMock.Verify(p => p.EmbedAsync(It.Is<List<string>>(texts => texts.Count <= 5), It.IsAny<CancellationToken>()), Times.AtLeast(2));
+
+        // Should process all chunks
+        Assert.Equal(12, _embedChunksQueue.Count);
     }
 
     private List<string> GenerateTestFiles(int count)

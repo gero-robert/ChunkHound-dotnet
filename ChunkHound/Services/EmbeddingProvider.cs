@@ -27,6 +27,10 @@ public class EmbeddingProvider : IEmbeddingProvider
 
     public Task<List<List<float>>> EmbedAsync(List<string> texts, CancellationToken cancellationToken = default)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new TaskCanceledException();
+        }
         _logger.LogInformation("Embedding {Count} texts", texts.Count);
         // Stub implementation - returns empty embeddings
         return Task.FromResult(new List<List<float>>());

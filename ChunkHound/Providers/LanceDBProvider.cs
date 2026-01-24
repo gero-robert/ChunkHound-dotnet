@@ -110,10 +110,10 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         if (chunks == null || chunks.Count == 0)
             return new List<int>();
 
+        var ids = new List<int>();
         _lock.EnterWriteLock();
         try
         {
-            var ids = new List<int>();
             var chunkData = new List<Dictionary<string, object>>();
 
             foreach (var chunk in chunks)
@@ -140,14 +140,6 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
 
             // Placeholder: Insert into LanceDB
             // await _chunksTable.InsertAsync(chunkData);
-
-            // Check for optimization
-            if (await ShouldOptimizeFragmentsAsync())
-            {
-                await OptimizeTablesAsync();
-            }
-
-            return ids;
         }
         catch (Exception ex)
         {
@@ -158,6 +150,14 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         {
             _lock.ExitWriteLock();
         }
+
+        // Check for optimization after releasing the write lock
+        if (await ShouldOptimizeFragmentsAsync())
+        {
+            await OptimizeTablesAsync();
+        }
+
+        return ids;
     }
 
     /// <summary>

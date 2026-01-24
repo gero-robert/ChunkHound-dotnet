@@ -322,7 +322,7 @@ public class EmbeddingService
         }
 
         // Insert successful embeddings and update failed chunks
-        if (allEmbeddingsData.Any() || chunkIdToStatus.Any())
+        if (allEmbeddingsData.Count != 0 || chunkIdToStatus.Count != 0)
         {
             _logger.LogDebug("Inserting {Embeddings} embeddings and updating status for {Failed} failed chunks",
                 allEmbeddingsData.Count, chunkIdToStatus.Count);
@@ -389,7 +389,7 @@ public class EmbeddingService
             var textTokens = EstimateTokens(chunk.Code, _embeddingProvider.ProviderName, _embeddingProvider.ModelName);
 
             // Check if adding this chunk would exceed limits
-            if ((currentTokens + textTokens > safeLimit && currentBatch.Any()) ||
+            if ((currentTokens + textTokens > safeLimit && currentBatch.Count != 0) ||
                 currentBatch.Count >= maxDocuments ||
                 currentBatch.Count >= maxChunksPerBatch)
             {
@@ -404,7 +404,7 @@ public class EmbeddingService
             }
         }
 
-        if (currentBatch.Any()) batches.Add(currentBatch);
+        if (currentBatch.Count != 0) batches.Add(currentBatch);
 
         _logger.LogInformation(
             "Created {BatchCount} batches for {ChunkCount} chunks (concurrency limit: {Concurrency})",
@@ -548,11 +548,13 @@ internal class EmbeddingErrorClassifier
         // Check message content for known transient patterns
         var message = ex.Message.ToLowerInvariant();
         if (message.Contains("timeout") ||
+            message.Contains("timed out") ||
             message.Contains("rate limit") ||
             message.Contains("throttle") ||
             message.Contains("service unavailable") ||
             message.Contains("temporarily unavailable") ||
-            message.Contains("connection") && (message.Contains("reset") || message.Contains("closed")))
+            message.Contains("connection") && (message.Contains("reset") || message.Contains("closed")) ||
+            message.Contains("circuit breaker"))
         {
             return EmbeddingErrorClassification.Transient;
         }
@@ -715,7 +717,7 @@ internal class EmbeddingBatchProcessor
         var currentBatch = batch;
         var attempt = 0;
 
-        while (attempt < maxRetries && currentBatch.Any())
+        while (attempt < maxRetries && currentBatch.Count != 0)
         {
             attempt++;
             if (attempt > 1)
@@ -746,7 +748,7 @@ internal class EmbeddingBatchProcessor
             result.FailedChunks.AddRange(permanentFailures.Select(c => (c, "Permanent failure", EmbeddingErrorClassification.Permanent)));
 
             // For transient failures, retry if attempts remain
-            if (transientFailures.Any() && attempt < maxRetries)
+            if (transientFailures.Count != 0 && attempt < maxRetries)
             {
                 currentBatch = transientFailures;
                 continue;
@@ -754,7 +756,7 @@ internal class EmbeddingBatchProcessor
             else
             {
                 // Max retries reached or no transient failures
-                result.FailedChunks.AddRange(transientFailures.Select(c => (c, "Transient failure after retries", EmbeddingErrorClassification.Permanent)));
+                result.FailedChunks.AddRange(transientFailures.Select(c => (c, "Transient failure after retries", EmbeddingErrorClassification.Transient)));
                 currentBatch = new List<Chunk>(); // Clear to stop retrying
             }
 

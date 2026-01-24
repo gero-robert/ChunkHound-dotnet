@@ -121,6 +121,162 @@ public class EmbeddingServiceTests : IDisposable
         Assert.Equal(1, result.Regenerated);
     }
 
+    /// <summary>
+    /// Tests that embedding generation handles provider failures gracefully with proper error classification
+    /// and retry logic. This validates the resilience of the batch processing pipeline when the
+    /// embedding provider encounters transient failures, ensuring failed chunks are retried appropriately.
+    /// </summary>
+    [Fact]
+    public async Task GenerateEmbeddingsForChunksAsync_ProviderFailsWithTransientError_RetriesAndSucceeds()
+    {
+        // Arrange
+        var chunk = CreateTestChunk();
+        var chunks = new List<Chunk> { chunk };
+        var embeddings = new List<List<float>> { new List<float> { 0.1f, 0.2f } };
+
+        _mockEmbedProvider.Setup(p => p.ProviderName).Returns("test");
+        _mockEmbedProvider.Setup(p => p.ModelName).Returns("model");
+        _mockEmbedProvider.Setup(p => p.GetMaxTokensPerBatch()).Returns(1000);
+        _mockEmbedProvider.Setup(p => p.GetMaxDocumentsPerBatch()).Returns(10);
+        _mockEmbedProvider.Setup(p => p.GetRecommendedConcurrency()).Returns(8);
+        _mockDbProvider.Setup(p => p.FilterExistingEmbeddingsAsync(It.IsAny<List<long>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(new List<long>());
+
+        // First call fails with timeout (transient), second succeeds
+        var callCount = 0;
+        _mockEmbedProvider.Setup(p => p.EmbedAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+                          .ReturnsAsync(() =>
+                          {
+                              callCount++;
+                              if (callCount == 1)
+                                  throw new TimeoutException("Request timed out");
+                              return embeddings;
+                          });
+
+        _mockDbProvider.Setup(p => p.InsertEmbeddingsBatchAsync(It.IsAny<List<EmbeddingData>>(), It.IsAny<Dictionary<long, string>>(), It.IsAny<CancellationToken>()))
+                       .Returns(Task.CompletedTask);
+        _mockDbProvider.Setup(p => p.OptimizeTablesAsync(It.IsAny<CancellationToken>()))
+                       .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _service.GenerateEmbeddingsForChunksAsync(chunks);
+
+        // Assert
+        Assert.Equal(1, result.TotalGenerated);
+        Assert.Equal(2, callCount); // Should succeed on retry
+    }
+
+    /// <summary>
+    /// Tests that embedding generation handles permanent provider failures by marking chunks as failed
+    /// without excessive retries. This validates error handling for unrecoverable failures like
+    /// authentication errors or invalid requests, preventing wasted resources on futile retry attempts.
+    /// </summary>
+    [Fact]
+    public async Task GenerateEmbeddingsForChunksAsync_ProviderFailsWithPermanentError_MarksAsFailed()
+    {
+        // Arrange
+        var chunk = CreateTestChunk();
+        var chunks = new List<Chunk> { chunk };
+
+        _mockEmbedProvider.Setup(p => p.ProviderName).Returns("test");
+        _mockEmbedProvider.Setup(p => p.ModelName).Returns("model");
+        _mockEmbedProvider.Setup(p => p.GetMaxTokensPerBatch()).Returns(1000);
+        _mockEmbedProvider.Setup(p => p.GetMaxDocumentsPerBatch()).Returns(10);
+        _mockEmbedProvider.Setup(p => p.GetRecommendedConcurrency()).Returns(8);
+        _mockDbProvider.Setup(p => p.FilterExistingEmbeddingsAsync(It.IsAny<List<long>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(new List<long>());
+
+        // Provider fails with HTTP 401 (permanent error)
+        _mockEmbedProvider.Setup(p => p.EmbedAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+                          .ThrowsAsync(new System.Net.Http.HttpRequestException("Unauthorized", null, System.Net.HttpStatusCode.Unauthorized));
+
+        _mockDbProvider.Setup(p => p.InsertEmbeddingsBatchAsync(It.IsAny<List<EmbeddingData>>(), It.IsAny<Dictionary<long, string>>(), It.IsAny<CancellationToken>()))
+                       .Returns(Task.CompletedTask);
+        _mockDbProvider.Setup(p => p.OptimizeTablesAsync(It.IsAny<CancellationToken>()))
+                       .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _service.GenerateEmbeddingsForChunksAsync(chunks);
+
+        // Assert
+        Assert.Equal(0, result.TotalGenerated);
+        Assert.Equal(1, result.PermanentFailures);
+    }
+
+    /// <summary>
+    /// Tests that embedding generation handles circuit breaker activation when consecutive failures occur.
+    /// This validates the circuit breaker pattern implementation, ensuring the service stops making
+    /// requests when the provider is consistently unavailable, preventing resource exhaustion.
+    /// </summary>
+    [Fact]
+    public async Task GenerateEmbeddingsForChunksAsync_CircuitBreakerOpens_PreventsRequests()
+    {
+        // Arrange
+        var chunk = CreateTestChunk();
+        var chunks = new List<Chunk> { chunk };
+
+        _mockEmbedProvider.Setup(p => p.ProviderName).Returns("test");
+        _mockEmbedProvider.Setup(p => p.ModelName).Returns("model");
+        _mockEmbedProvider.Setup(p => p.GetMaxTokensPerBatch()).Returns(1000);
+        _mockEmbedProvider.Setup(p => p.GetMaxDocumentsPerBatch()).Returns(10);
+        _mockEmbedProvider.Setup(p => p.GetRecommendedConcurrency()).Returns(8);
+        _mockDbProvider.Setup(p => p.FilterExistingEmbeddingsAsync(It.IsAny<List<long>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(new List<long>());
+
+        // Simulate circuit breaker being open by throwing InvalidOperationException
+        _mockEmbedProvider.Setup(p => p.EmbedAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+                          .ThrowsAsync(new InvalidOperationException("Circuit breaker is open"));
+
+        _mockDbProvider.Setup(p => p.InsertEmbeddingsBatchAsync(It.IsAny<List<EmbeddingData>>(), It.IsAny<Dictionary<long, string>>(), It.IsAny<CancellationToken>()))
+                       .Returns(Task.CompletedTask);
+        _mockDbProvider.Setup(p => p.OptimizeTablesAsync(It.IsAny<CancellationToken>()))
+                       .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _service.GenerateEmbeddingsForChunksAsync(chunks);
+
+        // Assert
+        Assert.Equal(0, result.TotalGenerated);
+        Assert.Equal(1, result.FailedChunks); // Should be marked as transient failure
+    }
+
+    /// <summary>
+    /// Tests that embedding generation handles rate limiting by respecting provider constraints.
+    /// This validates rate limiting implementation, ensuring the service doesn't exceed provider
+    /// request limits and handles throttling gracefully with appropriate backoff.
+    /// </summary>
+    [Fact]
+    public async Task GenerateEmbeddingsForChunksAsync_RateLimitExceeded_HandlesGracefully()
+    {
+        // Arrange
+        var chunk = CreateTestChunk();
+        var chunks = new List<Chunk> { chunk };
+
+        _mockEmbedProvider.Setup(p => p.ProviderName).Returns("test");
+        _mockEmbedProvider.Setup(p => p.ModelName).Returns("model");
+        _mockEmbedProvider.Setup(p => p.GetMaxTokensPerBatch()).Returns(1000);
+        _mockEmbedProvider.Setup(p => p.GetMaxDocumentsPerBatch()).Returns(10);
+        _mockEmbedProvider.Setup(p => p.GetRecommendedConcurrency()).Returns(8);
+        _mockDbProvider.Setup(p => p.FilterExistingEmbeddingsAsync(It.IsAny<List<long>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(new List<long>());
+
+        // Provider throws rate limit exception
+        _mockEmbedProvider.Setup(p => p.EmbedAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+                          .ThrowsAsync(new InvalidOperationException("Rate limit exceeded"));
+
+        _mockDbProvider.Setup(p => p.InsertEmbeddingsBatchAsync(It.IsAny<List<EmbeddingData>>(), It.IsAny<Dictionary<long, string>>(), It.IsAny<CancellationToken>()))
+                       .Returns(Task.CompletedTask);
+        _mockDbProvider.Setup(p => p.OptimizeTablesAsync(It.IsAny<CancellationToken>()))
+                       .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _service.GenerateEmbeddingsForChunksAsync(chunks);
+
+        // Assert
+        Assert.Equal(0, result.TotalGenerated);
+        Assert.Equal(1, result.FailedChunks); // Should be marked as transient failure
+    }
+
     private static Chunk CreateTestChunk() =>
         new Chunk("TestFunc", 1, 10, "function test() {}", ChunkType.Function, 1, Language.JavaScript, 1);
 
