@@ -59,4 +59,40 @@ public class DatabaseProvider : IDatabaseProvider
         // Stub implementation - return count
         return Task.FromResult(embeddings.Count);
     }
+
+    public Task<List<long>> FilterExistingEmbeddingsAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Filtering existing embeddings for {Count} chunks", chunkIds.Count);
+        return Task.FromResult(new List<long>());
+    }
+
+    public Task InsertEmbeddingsBatchAsync(List<EmbeddingData> embeddingsData, Dictionary<long, string> chunkIdToStatus, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Inserting batch of {Count} embedding data", embeddingsData.Count);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteEmbeddingsForChunksAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Deleting embeddings for {Count} chunks", chunkIds.Count);
+        return Task.CompletedTask;
+    }
+
+    public Task<List<Chunk>> GetChunksByFilePathAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting chunks for file {FilePath}", filePath);
+        return Task.FromResult(new List<Chunk>());
+    }
+
+    public Task<List<Chunk>> GetChunksByIdsAsync(IReadOnlyList<long> chunkIds, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting chunks for {Count} IDs", chunkIds.Count);
+        return Task.FromResult(new List<Chunk>());
+    }
+
+    public Task OptimizeTablesAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Optimizing tables");
+        return Task.CompletedTask;
+    }
 }

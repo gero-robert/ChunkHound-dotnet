@@ -88,4 +88,55 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
         await Task.Delay(1, cancellationToken); // Simulate minimal latency
         return embeddings.Count;
     }
+
+    /// <summary>
+    /// Filters out chunks that already have embeddings.
+    /// </summary>
+    public async Task<List<long>> FilterExistingEmbeddingsAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken);
+        return new List<long>(); // Assume none exist for fake provider
+    }
+
+    /// <summary>
+    /// Inserts a batch of embeddings with metadata.
+    /// </summary>
+    public async Task InsertEmbeddingsBatchAsync(List<Core.EmbeddingData> embeddingsData, Dictionary<long, string> chunkIdToStatus, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes embeddings for specific chunks.
+    /// </summary>
+    public async Task DeleteEmbeddingsForChunksAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets chunks by file path.
+    /// </summary>
+    public async Task<List<Core.Chunk>> GetChunksByFilePathAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken);
+        return _chunksById.Values.Where(c => c.FilePath == filePath).ToList();
+    }
+
+    /// <summary>
+    /// Gets chunks by IDs.
+    /// </summary>
+    public async Task<List<Core.Chunk>> GetChunksByIdsAsync(IReadOnlyList<long> chunkIds, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken);
+        return chunkIds.Where(id => _chunksById.ContainsKey((int)id)).Select(id => _chunksById[(int)id]).ToList();
+    }
+
+    /// <summary>
+    /// Optimizes database tables.
+    /// </summary>
+    public async Task OptimizeTablesAsync(CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken);
+    }
 }

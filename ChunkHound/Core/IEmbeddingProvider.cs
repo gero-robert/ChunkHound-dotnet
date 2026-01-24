@@ -22,4 +22,19 @@ public interface IEmbeddingProvider
     /// Gets the model name/version used by the provider.
     /// </summary>
     string ModelName { get; }
+
+    /// <summary>
+    /// Gets the maximum number of tokens per batch for this provider.
+    /// </summary>
+    int GetMaxTokensPerBatch();
+
+    /// <summary>
+    /// Gets the maximum number of documents per batch for this provider.
+    /// </summary>
+    int GetMaxDocumentsPerBatch();
+
+    /// <summary>
+    /// Gets the recommended concurrency level for this provider.
+    /// </summary>
+    int GetRecommendedConcurrency();
 }

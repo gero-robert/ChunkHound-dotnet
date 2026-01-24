@@ -41,4 +41,19 @@ public class FakeConstantEmbeddingProvider : Core.IEmbeddingProvider
         await Task.Delay(1, cancellationToken); // Simulate minimal latency
         return texts.Select(_ => _constantVector.ToList()).ToList();
     }
+
+    /// <summary>
+    /// Gets the maximum number of tokens per batch.
+    /// </summary>
+    public int GetMaxTokensPerBatch() => 8192;
+
+    /// <summary>
+    /// Gets the maximum number of documents per batch.
+    /// </summary>
+    public int GetMaxDocumentsPerBatch() => 100;
+
+    /// <summary>
+    /// Gets the recommended concurrency level.
+    /// </summary>
+    public int GetRecommendedConcurrency() => 8;
 }

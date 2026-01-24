@@ -389,6 +389,44 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         return embeddings.Count;
     }
 
+    public async Task<List<long>> FilterExistingEmbeddingsAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
+    {
+        // Placeholder
+        await Task.Delay(1, cancellationToken);
+        return new List<long>();
+    }
+
+    public async Task InsertEmbeddingsBatchAsync(List<EmbeddingData> embeddingsData, Dictionary<long, string> chunkIdToStatus, CancellationToken cancellationToken = default)
+    {
+        // Placeholder
+        await Task.Delay(1, cancellationToken);
+    }
+
+    public async Task DeleteEmbeddingsForChunksAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
+    {
+        // Placeholder
+        await Task.Delay(1, cancellationToken);
+    }
+
+    public async Task<List<Chunk>> GetChunksByFilePathAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        // Placeholder
+        await Task.Delay(1, cancellationToken);
+        return new List<Chunk>();
+    }
+
+    public async Task<List<Chunk>> GetChunksByIdsAsync(IReadOnlyList<long> chunkIds, CancellationToken cancellationToken = default)
+    {
+        // Placeholder
+        await Task.Delay(1, cancellationToken);
+        return new List<Chunk>();
+    }
+
+    public async Task OptimizeTablesAsync(CancellationToken cancellationToken = default)
+    {
+        await OptimizeTablesAsync();
+    }
+
     /// <summary>
     /// Disposes the provider and releases resources.
     /// </summary>
