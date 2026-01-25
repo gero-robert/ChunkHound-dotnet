@@ -48,9 +48,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
     private readonly ILogger<LanceDBProvider>? _logger;
     private readonly int _fragmentThreshold;
     private readonly TimeSpan _connectionTimeout;
-    private object? _connection; // Placeholder for LanceDB connection
-    private object? _chunksTable; // Placeholder for chunks table
-    private object? _filesTable; // Placeholder for files table
+    private readonly LanceDbService _lanceDbService;
     private int _nextChunkId = 1;
     private bool _isInitialized = false;
 
@@ -67,6 +65,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         _logger = logger;
         _fragmentThreshold = fragmentThreshold;
         _connectionTimeout = connectionTimeout;
+        _lanceDbService = new LanceDbService(dbPath, logger as ILogger<LanceDbService>);
     }
 
     /// <summary>
@@ -80,10 +79,8 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         _lock.EnterWriteLock();
         try
         {
-            // Placeholder: Initialize LanceDB connection
-            // _connection = await LanceDB.ConnectAsync(_dbPath);
-
-            // Create schema
+            // LanceDbService is already initialized in constructor
+            // Create schema if needed
             await CreateSchemaAsync();
 
             _isInitialized = true;
@@ -138,8 +135,8 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
                 ids.Add(id);
             }
 
-            // Placeholder: Insert into LanceDB
-            // await _chunksTable.InsertAsync(chunkData);
+            // Insert chunks into LanceDB
+            await _lanceDbService.AddBatchAsync("chunks", chunkData);
         }
         catch (Exception ex)
         {
@@ -178,25 +175,26 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         {
             var result = new List<Chunk>();
 
-            // Placeholder: Query LanceDB for chunks by content_hash
-            // var query = _chunksTable.Where($"content_hash IN ({string.Join(",", hashes.Select(h => $"'{h}'"))})");
-            // var rows = await query.ToListAsync();
+            // Query LanceDB for chunks by content_hash
+            var hashList = string.Join("', '", hashes);
+            var filter = $"content_hash IN ('{hashList}')";
+            var rows = await _lanceDbService.QueryAsync("chunks", filter);
 
             // For each row, create Chunk
-            // foreach (var row in rows)
-            // {
-            //     var chunk = new Chunk(
-            //         symbol: row[NAME_FIELD] as string,
-            //         startLine: (int)row[START_LINE_FIELD],
-            //         endLine: (int)row[END_LINE_FIELD],
-            //         code: row[CONTENT_FIELD] as string,
-            //         chunkType: ChunkTypeExtensions.FromString(row[CHUNK_TYPE_FIELD] as string),
-            //         fileId: (int)row[FILE_ID_FIELD],
-            //         language: LanguageExtensions.FromString(row[LANGUAGE_FIELD] as string),
-            //         id: (int)row[ID_FIELD]
-            //     );
-            //     result.Add(chunk);
-            // }
+            foreach (var row in rows)
+            {
+                var chunk = new Chunk(
+                    symbol: row.GetValueOrDefault(NAME_FIELD, "") as string,
+                    startLine: Convert.ToInt32(row.GetValueOrDefault(START_LINE_FIELD, 0)),
+                    endLine: Convert.ToInt32(row.GetValueOrDefault(END_LINE_FIELD, 0)),
+                    code: row.GetValueOrDefault(CONTENT_FIELD, "") as string,
+                    chunkType: ChunkTypeExtensions.FromString(row.GetValueOrDefault(CHUNK_TYPE_FIELD, "") as string),
+                    fileId: Convert.ToInt32(row.GetValueOrDefault(FILE_ID_FIELD, 0)),
+                    language: LanguageExtensions.FromString(row.GetValueOrDefault(LANGUAGE_FIELD, "") as string),
+                    id: Convert.ToInt32(row.GetValueOrDefault(ID_FIELD, 0))
+                );
+                result.Add(chunk);
+            }
 
             return result;
         }
@@ -249,20 +247,11 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         {
             var result = new Dictionary<string, int>();
 
-            // Placeholder: Get fragment counts
-            // if (_chunksTable != null)
-            // {
-            //     var stats = await _chunksTable.GetStatsAsync();
-            //     result["chunks"] = ExtractFragmentCount(stats);
-            // }
-            // if (_filesTable != null)
-            // {
-            //     var stats = await _filesTable.GetStatsAsync();
-            //     result["files"] = ExtractFragmentCount(stats);
-            // }
+            var chunksStats = await _lanceDbService.GetTableStatsAsync(CHUNKS_TABLE);
+            result[CHUNKS_TABLE] = ExtractFragmentCount(chunksStats);
 
-            result[CHUNKS_TABLE] = 0; // Placeholder
-            result[FILES_TABLE] = 0; // Placeholder
+            var filesStats = await _lanceDbService.GetTableStatsAsync(FILES_TABLE);
+            result[FILES_TABLE] = ExtractFragmentCount(filesStats);
 
             return result;
         }
@@ -292,15 +281,8 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         var initialCounts = await GetFragmentCountAsync();
         _logger?.LogDebug($"Initial fragment counts: chunks={initialCounts.GetValueOrDefault(CHUNKS_TABLE, 0)}, files={initialCounts.GetValueOrDefault(FILES_TABLE, 0)}");
 
-        // Placeholder: Optimize tables
-        // if (_chunksTable != null)
-        // {
-        //     await _chunksTable.OptimizeAsync(deleteUnverified: true);
-        // }
-        // if (_filesTable != null)
-        // {
-        //     await _filesTable.OptimizeAsync(deleteUnverified: true);
-        // }
+        // Optimize tables
+        await _lanceDbService.OptimizeAsync();
 
         var finalCounts = await GetFragmentCountAsync();
         var chunksReduction = initialCounts.GetValueOrDefault(CHUNKS_TABLE, 0) - finalCounts.GetValueOrDefault(CHUNKS_TABLE, 0);
@@ -314,9 +296,18 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
     /// <summary>
     /// Extracts fragment count from table stats.
     /// </summary>
-    private static int ExtractFragmentCount(object stats)
+    private static int ExtractFragmentCount(Dictionary<string, object> stats)
     {
-        // Placeholder: Extract from stats
+        // Try to extract fragment count from stats
+        if (stats.TryGetValue("num_fragments", out var fragments))
+        {
+            return Convert.ToInt32(fragments);
+        }
+        if (stats.TryGetValue("fragments", out var fragmentsObj))
+        {
+            return Convert.ToInt32(fragmentsObj);
+        }
+        // Default to 0 if not found
         return 0;
     }
 
@@ -391,15 +382,75 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
 
     public async Task<List<long>> FilterExistingEmbeddingsAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
     {
-        // Placeholder
-        await Task.Delay(1, cancellationToken);
-        return new List<long>();
+        if (chunkIds == null || chunkIds.Count == 0)
+            return new List<long>();
+
+        _lock.EnterReadLock();
+        try
+        {
+            var idList = string.Join(", ", chunkIds);
+            var filter = $"id IN ({idList}) AND provider = '{providerName}' AND model = '{modelName}' AND embedding IS NOT NULL";
+            var rows = await _lanceDbService.QueryAsync("chunks", filter);
+
+            var existingIds = new List<long>();
+            foreach (var row in rows)
+            {
+                if (row.TryGetValue(ID_FIELD, out var idObj))
+                {
+                    existingIds.Add(Convert.ToInt64(idObj));
+                }
+            }
+
+            return existingIds;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to filter existing embeddings");
+            return new List<long>();
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
     }
 
     public async Task InsertEmbeddingsBatchAsync(List<EmbeddingData> embeddingsData, Dictionary<long, string> chunkIdToStatus, CancellationToken cancellationToken = default)
     {
-        // Placeholder
-        await Task.Delay(1, cancellationToken);
+        if (embeddingsData == null || embeddingsData.Count == 0)
+            return;
+
+        _lock.EnterWriteLock();
+        try
+        {
+            var embeddingRecords = new List<Dictionary<string, object>>();
+
+            foreach (var embeddingData in embeddingsData)
+            {
+                var record = new Dictionary<string, object>
+                {
+                    [ID_FIELD] = embeddingData.ChunkId,
+                    ["embedding"] = embeddingData.Embedding,
+                    ["provider"] = embeddingData.Provider,
+                    ["model"] = embeddingData.Model,
+                    ["embedding_signature"] = $"{embeddingData.Provider}:{embeddingData.Model}:{embeddingData.Dimensions}",
+                    ["embedding_status"] = embeddingData.Status
+                };
+
+                embeddingRecords.Add(record);
+            }
+
+            await _lanceDbService.UpdateEmbeddingsAsync(embeddingRecords);
+            _logger?.LogDebug("Inserted {Count} embeddings", embeddingsData.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to insert embeddings batch");
+            throw;
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
     }
 
     public async Task DeleteEmbeddingsForChunksAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
@@ -417,9 +468,43 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
 
     public async Task<List<Chunk>> GetChunksByIdsAsync(IReadOnlyList<long> chunkIds, CancellationToken cancellationToken = default)
     {
-        // Placeholder
-        await Task.Delay(1, cancellationToken);
-        return new List<Chunk>();
+        if (chunkIds == null || chunkIds.Count == 0)
+            return new List<Chunk>();
+
+        _lock.EnterReadLock();
+        try
+        {
+            var idList = string.Join(", ", chunkIds);
+            var filter = $"id IN ({idList})";
+            var rows = await _lanceDbService.QueryAsync("chunks", filter);
+
+            var result = new List<Chunk>();
+            foreach (var row in rows)
+            {
+                var chunk = new Chunk(
+                    symbol: row.GetValueOrDefault(NAME_FIELD, "") as string,
+                    startLine: Convert.ToInt32(row.GetValueOrDefault(START_LINE_FIELD, 0)),
+                    endLine: Convert.ToInt32(row.GetValueOrDefault(END_LINE_FIELD, 0)),
+                    code: row.GetValueOrDefault(CONTENT_FIELD, "") as string,
+                    chunkType: ChunkTypeExtensions.FromString(row.GetValueOrDefault(CHUNK_TYPE_FIELD, "") as string),
+                    fileId: Convert.ToInt32(row.GetValueOrDefault(FILE_ID_FIELD, 0)),
+                    language: LanguageExtensions.FromString(row.GetValueOrDefault(LANGUAGE_FIELD, "") as string),
+                    id: Convert.ToInt32(row.GetValueOrDefault(ID_FIELD, 0))
+                );
+                result.Add(chunk);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to get chunks by IDs");
+            throw;
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
     }
 
     /// <summary>
@@ -453,7 +538,6 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
     public void Dispose()
     {
         _lock.Dispose();
-        // Placeholder: Dispose connection
-        // _connection?.Dispose();
+        _lanceDbService?.Dispose();
     }
 }

@@ -6,7 +6,78 @@
 
 The `LanceDBProvider` class implements a vector database provider using LanceDB for ChunkHound's C# indexing flow. This provider handles vector storage, semantic search, fragment optimization, and schema management for efficient code chunk indexing and retrieval.
 
-This design is ported from the Python `LanceDBProvider` in `chunkhound/providers/database/lancedb_provider.py`, adapted for C# with .NET conventions and assuming a .NET LanceDB client library.
+This design is ported from the Python `LanceDBProvider` in `chunkhound/providers/database/lancedb_provider.py`, adapted for C# with .NET conventions.
+
+## Implementation Approaches
+
+Since a native .NET LanceDB client library is not yet available, the following implementation strategies are considered:
+
+### Plan 1: Python Version Integration (via pythonnet Embedding)
+
+**Goal**: Embed the full-featured **LanceDB Python SDK** directly into the .NET process for maximum feature parity and minimal development effort.
+
+**Key Components**:
+- Use **pythonnet** (NuGet package `pythonnet`, version 3.0.5) to load CPython runtime in-process.
+- Install required Python packages: `lancedb`, `pyarrow`, `numpy`, etc., in a managed virtual env or embedded distribution.
+- All LanceDB operations executed via dynamic Python calls from C#.
+
+**Implementation Steps**:
+1. Add NuGet: `pythonnet` (3.0.5) – this is the only required package for MVP/prototype.
+2. For production deployment (no Python prerequisite), also add `Python.Included` (latest) for full embedded Python distribution.
+3. Initialize Python engine once at app startup, pointing to a bundled Python installation or venv.
+4. Create a thin C# service layer (e.g., `LanceDbService`) that wraps common operations:
+
+### Updated Recommendation for ChunkHound Plan 1
+For our MVP/prototype:
+1. Add **pythonnet** (3.0.5) – this is the only required package.
+2. Point to a system Python install (easiest for dev: install Python 3.12, create venv with `lancedb`, `pyarrow`, etc.).
+
+For production deployment (no Python prerequisite):
+1. Add **pythonnet** (3.0.5) + **Python.Included** (latest).
+2. Publish as self-contained/single-file – Python runtime gets bundled automatically.
+
+This setup keeps things simple, avoids the outdated `Python.Runtime` naming confusion, and gives us full embedded capability if needed. If we hit any version-specific quirks with LanceDB's deps (e.g., pyarrow on newer Python), we can pin to Python 3.11/3.12 embedded build.
+   ```csharp
+   public class LanceDbService
+   {
+       private dynamic _db;
+       public LanceDbService(string uri) 
+       {
+           using (Py.GIL())
+           {
+               dynamic lancedb = Py.Import("lancedb");
+               _db = lancedb.connect(uri);
+           }
+       }
+
+       public async Task<SearchResult> SearchAsync(float[] vector, int limit, string filter = null)
+       {
+           // Convert C# data to Python objects, call table.search(), return parsed results
+       }
+
+       public void AddBatch(IEnumerable<ChunkRecord> records) { /* Serialize to Arrow/PyList and call add() under lock */ }
+   }
+   ```
+
+**Concurrency handling**:
+- Readers: Parallel .NET tasks calling SearchAsync (GIL acquired per call, but heavy work releases GIL).
+- Writer: Single-threaded queue + SemaphoreSlim(1) to serialize writes.
+
+**Data transfer**: Use pythonnet interop for numpy arrays or Arrow buffers to minimize copying.
+
+**Fits Constraints**:
+- Fast communication: In-process, zero serialization/IPC overhead.
+- Multithreading: Good for many readers (parallel .NET threads), though GIL may limit peak concurrency on CPU-bound prep.
+- Single writer: Easy to enforce in C#.
+
+**Pros**:
+- Full Python SDK features immediately (embedding functions, multimodal, latest updates).
+- Lowest upfront effort — prototype in days.
+
+**Cons**:
+- Python runtime dependency (deployment size, versioning).
+- GIL contention possible under extreme read concurrency.
+- Slightly higher per-call overhead vs. native Rust.
 
 ## Class Definition
 
