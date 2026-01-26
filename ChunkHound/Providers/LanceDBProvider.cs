@@ -48,7 +48,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
     private readonly ILogger<LanceDBProvider>? _logger;
     private readonly int _fragmentThreshold;
     private readonly TimeSpan _connectionTimeout;
-    private readonly LanceDbService _lanceDbService;
+    private LanceDbService? _lanceDbService;
     private int _nextChunkId = 1;
     private bool _isInitialized = false;
 
@@ -65,7 +65,18 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         _logger = logger;
         _fragmentThreshold = fragmentThreshold;
         _connectionTimeout = connectionTimeout;
-        _lanceDbService = new LanceDbService(dbPath, logger as ILogger<LanceDbService>);
+    }
+
+    /// <summary>
+    /// Gets the LanceDB service, initializing it if necessary.
+    /// </summary>
+    private LanceDbService LanceDbService
+    {
+        get
+        {
+            _lanceDbService ??= new LanceDbService(_dbPath, _logger as ILogger<LanceDbService>);
+            return _lanceDbService;
+        }
     }
 
     /// <summary>
@@ -136,7 +147,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
             }
 
             // Insert chunks into LanceDB
-            await _lanceDbService.AddBatchAsync("chunks", chunkData);
+            await LanceDbService.AddBatchAsync("chunks", chunkData);
         }
         catch (Exception ex)
         {
@@ -178,7 +189,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
             // Query LanceDB for chunks by content_hash
             var hashList = string.Join("', '", hashes);
             var filter = $"content_hash IN ('{hashList}')";
-            var rows = await _lanceDbService.QueryAsync("chunks", filter);
+            var rows = await LanceDbService.QueryAsync("chunks", filter);
 
             // For each row, create Chunk
             foreach (var row in rows)
@@ -247,10 +258,10 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         {
             var result = new Dictionary<string, int>();
 
-            var chunksStats = await _lanceDbService.GetTableStatsAsync(CHUNKS_TABLE);
+            var chunksStats = await LanceDbService.GetTableStatsAsync(CHUNKS_TABLE);
             result[CHUNKS_TABLE] = ExtractFragmentCount(chunksStats);
 
-            var filesStats = await _lanceDbService.GetTableStatsAsync(FILES_TABLE);
+            var filesStats = await LanceDbService.GetTableStatsAsync(FILES_TABLE);
             result[FILES_TABLE] = ExtractFragmentCount(filesStats);
 
             return result;
@@ -282,7 +293,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         _logger?.LogDebug($"Initial fragment counts: chunks={initialCounts.GetValueOrDefault(CHUNKS_TABLE, 0)}, files={initialCounts.GetValueOrDefault(FILES_TABLE, 0)}");
 
         // Optimize tables
-        await _lanceDbService.OptimizeAsync();
+        await LanceDbService.OptimizeAsync();
 
         var finalCounts = await GetFragmentCountAsync();
         var chunksReduction = initialCounts.GetValueOrDefault(CHUNKS_TABLE, 0) - finalCounts.GetValueOrDefault(CHUNKS_TABLE, 0);
@@ -390,7 +401,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         {
             var idList = string.Join(", ", chunkIds);
             var filter = $"id IN ({idList}) AND provider = '{providerName}' AND model = '{modelName}' AND embedding IS NOT NULL";
-            var rows = await _lanceDbService.QueryAsync("chunks", filter);
+            var rows = await LanceDbService.QueryAsync("chunks", filter);
 
             var existingIds = new List<long>();
             foreach (var row in rows)
@@ -439,7 +450,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
                 embeddingRecords.Add(record);
             }
 
-            await _lanceDbService.UpdateEmbeddingsAsync(embeddingRecords);
+            await LanceDbService.UpdateEmbeddingsAsync(embeddingRecords);
             _logger?.LogDebug("Inserted {Count} embeddings", embeddingsData.Count);
         }
         catch (Exception ex)
@@ -476,7 +487,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         {
             var idList = string.Join(", ", chunkIds);
             var filter = $"id IN ({idList})";
-            var rows = await _lanceDbService.QueryAsync("chunks", filter);
+            var rows = await LanceDbService.QueryAsync("chunks", filter);
 
             var result = new List<Chunk>();
             foreach (var row in rows)

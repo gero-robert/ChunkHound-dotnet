@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -46,6 +47,9 @@ public class LanceDbService : IDisposable
         {
             if (!PythonEngine.IsInitialized)
             {
+                // Configure Python environment before initialization
+                ConfigurePythonEnvironment();
+
                 PythonEngine.Initialize();
                 _logger?.LogInformation("Python engine initialized");
             }
@@ -54,6 +58,35 @@ public class LanceDbService : IDisposable
         {
             _logger?.LogError(ex, "Failed to initialize Python engine");
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Configures Python environment for virtual environment support.
+    /// </summary>
+    private static void ConfigurePythonEnvironment()
+    {
+        // Force use the venv's Python environment
+        var venvPath = @"e:\dev\github\chunkhound-dotnet\python-deps\.venv";
+        var pythonHome = venvPath;
+        var pythonPath = Path.Combine(venvPath, "Lib", "site-packages");
+
+        // Set environment variables for pythonnet
+        Environment.SetEnvironmentVariable("PYTHONHOME", pythonHome);
+        Environment.SetEnvironmentVariable("PYTHONPATH", pythonPath);
+
+        // Set the Python DLL path for pythonnet (must be set before PythonEngine.Initialize)
+        // For uv-managed venvs, the DLL is in the uv python installation directory
+        var pythonDllPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "uv", "python", "cpython-3.12.12-windows-x86_64-none", "python312.dll");
+
+        if (System.IO.File.Exists(pythonDllPath))
+        {
+            Runtime.PythonDLL = pythonDllPath;
+            Console.WriteLine($"Using venv: Set Python DLL to: {pythonDllPath}");
+            Console.WriteLine($"Using venv: Set PYTHONHOME to: {pythonHome}");
+            Console.WriteLine($"Using venv: Set PYTHONPATH to: {pythonPath}");
         }
     }
 
@@ -67,6 +100,14 @@ public class LanceDbService : IDisposable
         {
             try
             {
+                // Ensure the venv site-packages is in sys.path
+                var venvPath = @"e:\dev\github\chunkhound-dotnet\python-deps\.venv";
+                var pythonPath = Path.Combine(venvPath, "Lib", "site-packages");
+
+                dynamic sys = Py.Import("sys");
+                sys.path.insert(0, pythonPath.ToString());
+                _logger?.LogDebug("Added {PythonPath} to sys.path", pythonPath);
+
                 dynamic lancedb = Py.Import("lancedb");
                 _db = lancedb.connect(dbPath);
 
@@ -350,7 +391,10 @@ public class LanceDbService : IDisposable
             using (Py.GIL())
             {
                 if (_chunksTable == null)
-                    throw new InvalidOperationException("Chunks table not initialized");
+                {
+                    // Create table if it doesn't exist
+                    _chunksTable = CreateTable("chunks", embeddingsData);
+                }
 
                 // Convert to Python list of dicts
                 var pyRecords = new PyList();
@@ -460,7 +504,28 @@ public class LanceDbService : IDisposable
         if (_isDisposed)
             return;
 
+        // Close the database connection to release GIL
+        if (_db != null)
+        {
+            try
+            {
+                using (Py.GIL())
+                {
+                    _db.close();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to close LanceDB connection");
+            }
+        }
+
         _writeSemaphore.Dispose();
+
+        // Clear references
+        _db = null;
+        _chunksTable = null;
+        _filesTable = null;
 
         if (PythonEngine.IsInitialized)
         {
