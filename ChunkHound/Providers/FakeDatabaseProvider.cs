@@ -157,4 +157,15 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
     {
         await Task.Delay(1, cancellationToken);
     }
+
+    /// <summary>
+    /// Clears all data by clearing in-memory collections.
+    /// </summary>
+    public Task ClearAllDataAsync()
+    {
+        _chunksByHash.Clear();
+        _chunksById.Clear();
+        _nextId = 1;
+        return Task.CompletedTask;
+    }
 }

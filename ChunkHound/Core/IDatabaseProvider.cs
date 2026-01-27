@@ -106,4 +106,9 @@ public interface IDatabaseProvider
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task OptimizeTablesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears all data by dropping and recreating the chunks and files tables.
+    /// </summary>
+    Task ClearAllDataAsync();
 }

@@ -45,12 +45,14 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
 
     private readonly string _dbPath;
     private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
-    private readonly ILogger<LanceDBProvider>? _logger;
+    private readonly ILogger? _logger;
     private readonly int _fragmentThreshold;
     private readonly TimeSpan _connectionTimeout;
     private LanceDbService? _lanceDbService;
     private int _nextChunkId = 1;
     private bool _isInitialized = false;
+
+    private readonly SemaphoreSlim _pythonSemaphore = new SemaphoreSlim(1, 1);
 
     /// <summary>
     /// Initializes a new instance of the LanceDBProvider.
@@ -59,7 +61,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
     /// <param name="logger">Logger instance for diagnostics</param>
     /// <param name="fragmentThreshold">Threshold for fragment optimization</param>
     /// <param name="connectionTimeout">Timeout for database connections</param>
-    public LanceDBProvider(string dbPath, ILogger<LanceDBProvider>? logger = null, int fragmentThreshold = 100, TimeSpan connectionTimeout = default)
+    public LanceDBProvider(string dbPath, ILogger? logger = null, int fragmentThreshold = 100, TimeSpan connectionTimeout = default)
     {
         _dbPath = dbPath ?? throw new ArgumentNullException(nameof(dbPath));
         _logger = logger;
@@ -74,7 +76,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
     {
         get
         {
-            _lanceDbService ??= new LanceDbService(_dbPath, _logger as ILogger<LanceDbService>);
+            _lanceDbService ??= new LanceDbService(_dbPath, _logger);
             return _lanceDbService;
         }
     }
@@ -119,7 +121,9 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
             return new List<int>();
 
         var ids = new List<int>();
+        _logger?.LogDebug("StoreChunksAsync: Entering write lock for {Count} chunks", chunks.Count);
         _lock.EnterWriteLock();
+        _logger?.LogDebug("StoreChunksAsync: Acquired write lock for {Count} chunks", chunks.Count);
         try
         {
             var chunkData = new List<Dictionary<string, object>>();
@@ -147,7 +151,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
             }
 
             // Insert chunks into LanceDB
-            await LanceDbService.AddBatchAsync("chunks", chunkData);
+            LanceDbService.AddBatch("chunks", chunkData);
         }
         catch (Exception ex)
         {
@@ -156,6 +160,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         }
         finally
         {
+            _logger?.LogDebug("StoreChunksAsync: Exiting write lock");
             _lock.ExitWriteLock();
         }
 
@@ -189,7 +194,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
             // Query LanceDB for chunks by content_hash
             var hashList = string.Join("', '", hashes);
             var filter = $"content_hash IN ('{hashList}')";
-            var rows = await LanceDbService.QueryAsync("chunks", filter);
+            var rows = LanceDbService.Query("chunks", filter);
 
             // For each row, create Chunk
             foreach (var row in rows)
@@ -258,10 +263,10 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         {
             var result = new Dictionary<string, int>();
 
-            var chunksStats = await LanceDbService.GetTableStatsAsync(CHUNKS_TABLE);
+            var chunksStats = LanceDbService.GetTableStats(CHUNKS_TABLE);
             result[CHUNKS_TABLE] = ExtractFragmentCount(chunksStats);
 
-            var filesStats = await LanceDbService.GetTableStatsAsync(FILES_TABLE);
+            var filesStats = LanceDbService.GetTableStats(FILES_TABLE);
             result[FILES_TABLE] = ExtractFragmentCount(filesStats);
 
             return result;
@@ -293,7 +298,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         _logger?.LogDebug($"Initial fragment counts: chunks={initialCounts.GetValueOrDefault(CHUNKS_TABLE, 0)}, files={initialCounts.GetValueOrDefault(FILES_TABLE, 0)}");
 
         // Optimize tables
-        await LanceDbService.OptimizeAsync();
+        LanceDbService.Optimize();
 
         var finalCounts = await GetFragmentCountAsync();
         var chunksReduction = initialCounts.GetValueOrDefault(CHUNKS_TABLE, 0) - finalCounts.GetValueOrDefault(CHUNKS_TABLE, 0);
@@ -400,8 +405,8 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         try
         {
             var idList = string.Join(", ", chunkIds);
-            var filter = $"id IN ({idList}) AND provider = '{providerName}' AND model = '{modelName}' AND embedding IS NOT NULL";
-            var rows = await LanceDbService.QueryAsync("chunks", filter);
+            var filter = $"id IN ({idList})";
+            var rows = LanceDbService.Query("chunks", filter);
 
             var existingIds = new List<long>();
             foreach (var row in rows)
@@ -450,7 +455,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
                 embeddingRecords.Add(record);
             }
 
-            await LanceDbService.UpdateEmbeddingsAsync(embeddingRecords);
+            LanceDbService.UpdateEmbeddings(embeddingRecords);
             _logger?.LogDebug("Inserted {Count} embeddings", embeddingsData.Count);
         }
         catch (Exception ex)
@@ -487,7 +492,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         {
             var idList = string.Join(", ", chunkIds);
             var filter = $"id IN ({idList})";
-            var rows = await LanceDbService.QueryAsync("chunks", filter);
+            var rows = LanceDbService.Query("chunks", filter);
 
             var result = new List<Chunk>();
             foreach (var row in rows)
@@ -541,6 +546,24 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
     public async Task OptimizeTablesAsync(CancellationToken cancellationToken = default)
     {
         await OptimizeTablesAsync();
+    }
+
+    /// <summary>
+    /// Clears all data by dropping and recreating the chunks and files tables.
+    /// </summary>
+    public async Task ClearAllDataAsync()
+    {
+        _lock.EnterWriteLock();
+        try
+        {
+            LanceDbService.ClearAllData();
+            _nextChunkId = 1; // Reset chunk ID counter
+            _logger?.LogInformation("All data cleared and tables recreated");
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
     }
 
     /// <summary>

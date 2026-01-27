@@ -25,14 +25,7 @@ if (Test-Path $activateScript) {
     exit 1
 }
 
-# Set environment variables for pythonnet
-$pythonHome = Join-Path $venvPath "Lib"
-$pythonPath = Join-Path $venvPath "Lib\site-packages"
-$env:PYTHONHOME = $pythonHome
-$env:PYTHONPATH = $pythonPath
-
-Write-Host "PYTHONHOME set to: $env:PYTHONHOME" -ForegroundColor Green
-Write-Host "PYTHONPATH set to: $env:PYTHONPATH" -ForegroundColor Green
+# Environment variables will be set by TestHelper
 Write-Host "Python version:" -ForegroundColor Green
 & python --version
 

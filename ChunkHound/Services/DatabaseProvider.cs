@@ -110,4 +110,11 @@ public class DatabaseProvider : IDatabaseProvider
         _logger.LogInformation("Optimizing tables");
         return Task.CompletedTask;
     }
+
+    public Task ClearAllDataAsync()
+    {
+        _logger.LogInformation("Clearing all data");
+        // Stub implementation - does nothing
+        return Task.CompletedTask;
+    }
 }
