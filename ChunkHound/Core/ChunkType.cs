@@ -46,6 +46,16 @@ public enum ChunkType
     Import,
 
     /// <summary>
+    /// Vue component
+    /// </summary>
+    Vue,
+
+    /// <summary>
+    /// YAML template
+    /// </summary>
+    YamlTemplate,
+
+    /// <summary>
     /// Unknown or unclassified chunk type
     /// </summary>
     Unknown
@@ -69,6 +79,8 @@ public static class ChunkTypeExtensions
         ChunkType.Module => "module",
         ChunkType.Documentation => "documentation",
         ChunkType.Import => "import",
+        ChunkType.Vue => "vue",
+        ChunkType.YamlTemplate => "yaml_template",
         ChunkType.Unknown => "unknown",
         _ => throw new ArgumentOutOfRangeException(nameof(chunkType))
     };
@@ -101,6 +113,8 @@ public static class ChunkTypeExtensions
         "module" => ChunkType.Module,
         "documentation" => ChunkType.Documentation,
         "import" => ChunkType.Import,
+        "vue" => ChunkType.Vue,
+        "yaml_template" => ChunkType.YamlTemplate,
         "unknown" => ChunkType.Unknown,
         _ => ChunkType.Unknown
     };

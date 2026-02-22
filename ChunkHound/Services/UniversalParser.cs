@@ -1,4 +1,5 @@
 using ChunkHound.Core;
+using ChunkHound.Parsers;
 using Microsoft.Extensions.Logging;
 using System.Text;
 using System.IO;
@@ -15,14 +16,18 @@ namespace ChunkHound.Services;
 public class UniversalParser : IUniversalParser
 {
     private readonly ILogger<UniversalParser> _logger;
-    private readonly ILanguageConfigProvider _configProvider;
+    private readonly ILanguageConfigProvider _config;
+    private readonly IParserFactory _factory;
+    private readonly RecursiveChunkSplitter _splitter;
     private long _totalFilesParsed;
     private long _totalChunksCreated;
 
-    public UniversalParser(ILogger<UniversalParser> logger, ILanguageConfigProvider configProvider)
+    public UniversalParser(ILogger<UniversalParser> logger, ILanguageConfigProvider config, IParserFactory? factory = null, RecursiveChunkSplitter? splitter = null)
     {
         _logger = logger;
-        _configProvider = configProvider ?? new LanguageConfigProvider();
+        _config = config ?? new LanguageConfigProvider();
+        _factory = factory;
+        _splitter = splitter;
         _totalFilesParsed = 0;
         _totalChunksCreated = 0;
     }
@@ -63,6 +68,21 @@ public class UniversalParser : IUniversalParser
         }
     }
 
+    public async Task<IReadOnlyList<Chunk>> ParseFileAsync(string filePath)
+    {
+        if (_factory == null) throw new InvalidOperationException("ParserFactory not provided");
+        if (_splitter == null) throw new InvalidOperationException("RecursiveChunkSplitter not provided");
+
+        var content = await System.IO.File.ReadAllTextAsync(filePath);
+        var ext = Path.GetExtension(filePath).ToLowerInvariant();
+        
+        var parser = _factory.GetParser(ext);
+        var initialChunks = await parser.ParseAsync(content, filePath);
+        
+        var config = _config.GetConfig(Language.Unknown);
+        return _splitter.Split(initialChunks, config.MaxChunkSize, 0);
+    }
+
     /// <summary>
     /// Parses content string and extracts semantic chunks using the cAST algorithm.
     /// </summary>
@@ -90,7 +110,7 @@ public class UniversalParser : IUniversalParser
         var currentStartLine = 1;
         var lineNum = 1;
         var currentIndentationLevel = 0;
-        var config = _configProvider.GetConfig(file.Language);
+        var config = _config.GetConfig(file.Language);
 
         foreach (var line in lines)
         {
@@ -185,7 +205,7 @@ public class UniversalParser : IUniversalParser
         if (string.IsNullOrWhiteSpace(trimmedLine))
             return false;
 
-        var config = _configProvider.GetConfig(language);
+        var config = _config.GetConfig(language);
         return config.ChunkStartKeywords.Any(keyword => trimmedLine.StartsWith(keyword) || trimmedLine.Contains(keyword));
     }
 
@@ -197,7 +217,7 @@ public class UniversalParser : IUniversalParser
         if (string.IsNullOrWhiteSpace(content))
             return null;
 
-        var config = _configProvider.GetConfig(file.Language);
+        var config = _config.GetConfig(file.Language);
         var metrics = CalculateChunkMetrics(content);
         if (metrics.NonWhitespaceChars < config.MinChunkSize)
             return null;
@@ -236,7 +256,7 @@ public class UniversalParser : IUniversalParser
     {
         var firstLine = content.Split('\n').FirstOrDefault()?.Trim() ?? "";
 
-        var config = _configProvider.GetConfig(language);
+        var config = _config.GetConfig(language);
         foreach (var pattern in config.TypePatterns)
         {
             if (firstLine.StartsWith(pattern.Key) || firstLine.Contains(pattern.Key))
@@ -255,7 +275,7 @@ public class UniversalParser : IUniversalParser
     {
         var firstLine = content.Split('\n').FirstOrDefault()?.Trim() ?? "";
 
-        var config = _configProvider.GetConfig(language);
+        var config = _config.GetConfig(language);
         foreach (var pattern in config.SymbolPatterns)
         {
             if (firstLine.StartsWith(pattern.Key) || firstLine.Contains(pattern.Key))
@@ -304,7 +324,7 @@ public class UniversalParser : IUniversalParser
     /// </summary>
     private async Task<List<Chunk>> ValidateAndSplitChunkAsync(Chunk chunk, string content)
     {
-        var config = _configProvider.GetConfig(chunk.Language);
+        var config = _config.GetConfig(chunk.Language);
         var metrics = CalculateChunkMetrics(chunk.Code);
 
         if (metrics.NonWhitespaceChars <= config.MaxChunkSize)
@@ -321,7 +341,7 @@ public class UniversalParser : IUniversalParser
     /// </summary>
     private async Task<List<Chunk>> SplitLargeChunkAsync(Chunk chunk, string content)
     {
-        var config = _configProvider.GetConfig(chunk.Language);
+        var config = _config.GetConfig(chunk.Language);
         var lines = chunk.Code.Split('\n');
         var result = new List<Chunk>();
         var currentLines = new List<string>();

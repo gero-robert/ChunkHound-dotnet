@@ -16,6 +16,7 @@ public enum Language
     Rust,
     PHP,
     Ruby,
+    Yaml,
     /// <summary>
     /// Unknown or unsupported language
     /// </summary>
@@ -43,6 +44,7 @@ public static class LanguageExtensions
         Language.Rust => ".rs",
         Language.PHP => ".php",
         Language.Ruby => ".rb",
+        Language.Yaml => ".yaml",
         _ => throw new ArgumentOutOfRangeException(nameof(language))
     };
 
@@ -62,6 +64,7 @@ public static class LanguageExtensions
         Language.Rust => "rust",
         Language.PHP => "php",
         Language.Ruby => "ruby",
+        Language.Yaml => "yaml",
         _ => throw new ArgumentOutOfRangeException(nameof(language))
     };
 
@@ -81,6 +84,7 @@ public static class LanguageExtensions
         "rust" or "rs" => Language.Rust,
         "php" => Language.PHP,
         "ruby" or "rb" => Language.Ruby,
+        "yaml" or "yml" => Language.Yaml,
         _ => Language.Unknown
     };
 }

@@ -1,0 +1,75 @@
+---
+# Sample YAML file for benchmarking
+name: ChunkHound Benchmark Test
+version: "1.0.0"
+description: "A sample YAML configuration file for testing parsers"
+
+# Configuration section
+config:
+  maxChunkSize: 1000
+  overlap: 100
+  languages:
+    - csharp
+    - python
+    - javascript
+    - typescript
+
+# Database settings
+database:
+  provider: "lancedb"
+  connection:
+    path: "./data"
+    table: "chunks"
+  embedding:
+    provider: "openai"
+    model: "text-embedding-ada-002"
+    dimensions: 1536
+
+# Parser settings
+parsers:
+  markdown:
+    enabled: true
+    options:
+      extractHeadings: true
+      extractCodeBlocks: true
+  yaml:
+    enabled: true
+    sanitizeTemplates: true
+  vue:
+    enabled: true
+    extractScript: true
+    extractTemplate: true
+    extractStyle: true
+  code:
+    enabled: true
+    languages:
+      - csharp
+      - python
+      - javascript
+
+# Performance settings
+performance:
+  batchSize: 100
+  parallelProcessing: true
+  cacheEnabled: true
+
+# Logging
+logging:
+  level: "information"
+  file:
+    enabled: true
+    path: "./logs/chunkhound.log"
+  console:
+    enabled: true
+
+# Test data
+testData:
+  files:
+    - path: "src/main.cs"
+      language: "csharp"
+    - path: "src/app.py"
+      language: "python"
+    - path: "src/component.vue"
+      language: "vue"
+  expectedChunks: 25
+  expectedEmbeddings: 25

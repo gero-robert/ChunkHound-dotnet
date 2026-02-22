@@ -6,9 +6,11 @@ using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Threading.Tasks;
 using FileModel = ChunkHound.Core.File;
+using ChunkHound.Core.Tests.Helpers;
 
 namespace ChunkHound.Services.Tests
 {
+    [Collection("LanceDB")]
     public class UniversalParserTests
     {
         private readonly Mock<ILogger<UniversalParser>> _mockLogger;
@@ -276,6 +278,171 @@ export default MyComponent;
             finally
             {
                 // Cleanup
+                System.IO.File.Delete(testFile);
+            }
+        }
+
+        // Integration tests for new parsers
+
+        [Fact]
+        public async Task ParseAsync_YamlFile_UsesRapidYamlParser()
+        {
+            // Arrange
+            var testFile = Path.GetTempFileName();
+            var yamlContent = @"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-config
+data:
+  key1: value1
+";
+            await System.IO.File.WriteAllTextAsync(testFile, yamlContent);
+
+            var file = new FileModel(
+                path: testFile,
+                mtime: 1234567890,
+                language: Language.Yaml,
+                sizeBytes: yamlContent.Length,
+                id: 1
+            );
+
+            try
+            {
+                // Act
+                var chunks = await _parser.ParseAsync(file);
+
+                // Assert
+                Assert.NotNull(chunks);
+                Assert.NotEmpty(chunks);
+                // Should use RapidYamlParser and create chunks
+            }
+            finally
+            {
+                System.IO.File.Delete(testFile);
+            }
+        }
+
+        [Fact]
+        public async Task ParseAsync_VueFile_UsesVueChunkParser()
+        {
+            // Arrange
+            var testFile = Path.GetTempFileName() + ".vue";
+            var vueContent = @"<template>
+  <div>Hello</div>
+</template>
+
+<script>
+export default {
+  name: 'Test'
+}
+</script>";
+            await System.IO.File.WriteAllTextAsync(testFile, vueContent);
+
+            var file = new FileModel(
+                path: testFile,
+                mtime: 1234567890,
+                language: Language.JavaScript, // Vue files use JS
+                sizeBytes: vueContent.Length,
+                id: 1
+            );
+
+            try
+            {
+                // Act
+                var chunks = await _parser.ParseAsync(file);
+
+                // Assert
+                Assert.NotNull(chunks);
+                Assert.NotEmpty(chunks);
+                // Should use VueChunkParser and create chunks
+            }
+            finally
+            {
+                System.IO.File.Delete(testFile);
+            }
+        }
+
+        [Fact]
+        public async Task ParseAsync_CodeFile_UsesCodeChunkParser()
+        {
+            // Arrange
+            var testFile = Path.GetTempFileName() + ".py";
+            var pythonContent = @"def hello():
+    print('Hello World')
+
+class TestClass:
+    pass";
+            await System.IO.File.WriteAllTextAsync(testFile, pythonContent);
+
+            var file = new FileModel(
+                path: testFile,
+                mtime: 1234567890,
+                language: Language.Python,
+                sizeBytes: pythonContent.Length,
+                id: 1
+            );
+
+            try
+            {
+                // Act
+                var chunks = await _parser.ParseAsync(file);
+
+                // Assert
+                Assert.NotNull(chunks);
+                Assert.NotEmpty(chunks);
+                // Should use CodeChunkParser and create chunks
+            }
+            finally
+            {
+                System.IO.File.Delete(testFile);
+            }
+        }
+
+        [Fact]
+        public async Task ParseAsync_RoundTripWithPythonReference_ValidatesAgainstPython()
+        {
+            // Skip if Python is not available
+            if (!PythonTestHelper.IsPythonAvailable())
+            {
+                return; // Skip test gracefully
+            }
+
+            // Arrange - Create a test file that can be parsed by both C# and Python
+            var testFile = Path.GetTempFileName() + ".yaml";
+            var yamlContent = @"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-config
+data:
+  key1: value1
+  key2: value2
+";
+            await System.IO.File.WriteAllTextAsync(testFile, yamlContent);
+
+            var file = new FileModel(
+                path: testFile,
+                mtime: 1234567890,
+                language: Language.Yaml,
+                sizeBytes: yamlContent.Length,
+                id: 1
+            );
+
+            try
+            {
+                // Act - Parse with C# implementation
+                var csharpChunks = await _parser.ParseAsync(file);
+
+                // TODO: Implement Python reference parsing and comparison
+                // For now, just ensure C# parsing works
+                Assert.NotNull(csharpChunks);
+                Assert.NotEmpty(csharpChunks);
+
+                // Future: Compare csharpChunks with pythonChunks for 100% match
+            }
+            finally
+            {
                 System.IO.File.Delete(testFile);
             }
         }

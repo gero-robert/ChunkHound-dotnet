@@ -3,17 +3,20 @@ using BenchmarkDotNet.Jobs;
 using ChunkHound.Providers;
 using ChunkHound.Services;
 using ChunkHound.Core;
+using ChunkHound.Parsers;
+using ChunkHound.Parsers.Concrete;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.IO;
 
 // Performance benchmarks comparing C# implementation to Python baseline
 // These benchmarks measure key operations for indexing performance
 
 namespace ChunkHound.Core.Tests.Benchmarks
 {
-    [SimpleJob(RuntimeMoniker.Net80)]
+    [SimpleJob]
     [MemoryDiagnoser]
     public class IndexingBenchmarks
     {
@@ -24,17 +27,42 @@ namespace ChunkHound.Core.Tests.Benchmarks
         private List<Chunk> _testChunks = null!;
         private List<string> _testTexts = null!;
 
+        // Test files for parsing benchmarks
+        private string _markdownFile = null!;
+        private string _yamlFile = null!;
+        private string _vueFile = null!;
+        private string _csharpFile = null!;
+
         [GlobalSetup]
         public void Setup()
         {
             _embeddingProvider = new FakeConstantEmbeddingProvider();
             _databaseProvider = new FakeDatabaseProvider();
             _languageConfigProvider = new LanguageConfigProvider();
-            _parser = new UniversalParser(NullLogger<UniversalParser>.Instance, _languageConfigProvider);
+
+            // Create parser factory and splitter for UniversalParser
+            var parsers = new List<IChunkParser>
+            {
+                new MarkdownParser(),
+                new RapidYamlParser(),
+                new VueChunkParser(),
+                new CodeChunkParser(),
+                new UniversalTextParser()
+            };
+            var parserFactory = new ParserFactory(parsers);
+            var splitter = new RecursiveChunkSplitter(_languageConfigProvider);
+            _parser = new UniversalParser(NullLogger<UniversalParser>.Instance, _languageConfigProvider, parserFactory, splitter);
 
             // Generate test data
             _testChunks = GenerateTestChunks(1000);
             _testTexts = GenerateTestTexts(1000);
+
+            // Set up test files
+            var testFilesDir = Path.Combine(Directory.GetCurrentDirectory(), "ChunkHound.Tests", "Benchmarks", "TestFiles");
+            _markdownFile = Path.Combine(testFilesDir, "sample.md");
+            _yamlFile = Path.Combine(testFilesDir, "sample.yaml");
+            _vueFile = Path.Combine(testFilesDir, "sample.vue");
+            _csharpFile = Path.Combine(testFilesDir, "sample.cs");
         }
 
         [Benchmark]
@@ -57,12 +85,67 @@ namespace ChunkHound.Core.Tests.Benchmarks
         }
 
         [Benchmark]
+        public async Task FileParsing_MarkdownFile()
+        {
+            var testFile = new File(_markdownFile, 1234567890, Language.Unknown, 1000, null, "hash");
+            await _parser.ParseAsync(testFile);
+        }
+
+        [Benchmark]
+        public async Task FileParsing_YamlFile()
+        {
+            var testFile = new File(_yamlFile, 1234567890, Language.Yaml, 1000, null, "hash");
+            await _parser.ParseAsync(testFile);
+        }
+
+        [Benchmark]
+        public async Task FileParsing_VueFile()
+        {
+            var testFile = new File(_vueFile, 1234567890, Language.Unknown, 1000, null, "hash");
+            await _parser.ParseAsync(testFile);
+        }
+
+        [Benchmark]
         public async Task FileParsing_CSharpFile()
         {
-            var testFile = new File("/test/file.cs", 1234567890, Language.CSharp, 1000, null, "hash");
-            var code = GenerateCSharpCode();
-            // Note: This would require actual parsing implementation
-            // await _parser.ParseAsync(testFile);
+            var testFile = new File(_csharpFile, 1234567890, Language.CSharp, 1000, null, "hash");
+            await _parser.ParseAsync(testFile);
+        }
+
+        [Benchmark]
+        public async Task EndToEndParsingAndEmbedding_Markdown()
+        {
+            var testFile = new File(_markdownFile, 1234567890, Language.Unknown, 1000, null, "hash");
+            var chunks = await _parser.ParseAsync(testFile);
+            var texts = chunks.Select(c => c.Code).ToList();
+            await _embeddingProvider.EmbedAsync(texts);
+        }
+
+        [Benchmark]
+        public async Task EndToEndParsingAndEmbedding_Yaml()
+        {
+            var testFile = new File(_yamlFile, 1234567890, Language.Yaml, 1000, null, "hash");
+            var chunks = await _parser.ParseAsync(testFile);
+            var texts = chunks.Select(c => c.Code).ToList();
+            await _embeddingProvider.EmbedAsync(texts);
+        }
+
+        [Benchmark]
+        public async Task EndToEndParsingAndEmbedding_Vue()
+        {
+            var testFile = new File(_vueFile, 1234567890, Language.Unknown, 1000, null, "hash");
+            var chunks = await _parser.ParseAsync(testFile);
+            var texts = chunks.Select(c => c.Code).ToList();
+            await _embeddingProvider.EmbedAsync(texts);
+        }
+
+        [Benchmark]
+        public async Task EndToEndParsingAndEmbedding_CSharp()
+        {
+            var testFile = new File(_csharpFile, 1234567890, Language.CSharp, 1000, null, "hash");
+            var chunks = await _parser.ParseAsync(testFile);
+            var texts = chunks.Select(c => c.Code).ToList();
+            await _embeddingProvider.EmbedAsync(texts);
         }
 
         [Benchmark]

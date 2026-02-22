@@ -1,1 +1,6 @@
-{"mcpServers":{"git":{"command":"uvx","args":["mcp-server-git","--repository","."],"alwaysAllow":["git_status"]},"chunkhound":{"command":"E:/dev/github/chunkhound-fork-working/.venv/Scripts/chunkhound.exe","args":["mcp"],"alwaysAllow":["search_code","regex_search","multi_hop_search","code_research","search_semantic","get_stats","health_check","search_regex"]}}}
+{
+    "mcpServers": {
+
+        
+    }
+}

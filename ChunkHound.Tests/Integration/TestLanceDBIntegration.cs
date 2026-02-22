@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 public class TestLanceDBIntegration
 {
-    public static async Task Main()
+    public static async Task RunTest()
     {
         Console.WriteLine("Testing LanceDB pythonnet integration...");
 

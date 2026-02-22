@@ -5,6 +5,8 @@ using Serilog;
 using System.IO;
 using ChunkHound.Core;
 using ChunkHound.Services;
+using ChunkHound.Parsers;
+using ChunkHound.Parsers.Concrete;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -30,6 +32,15 @@ builder.Services.AddSingleton<IUniversalParser, UniversalParser>();
 builder.Services.AddSingleton<IEmbeddingProvider, EmbeddingProvider>();
 builder.Services.AddSingleton<IDatabaseProvider, DatabaseProvider>();
 builder.Services.AddSingleton<ILanguageConfigProvider, LanguageConfigProvider>();
+
+// Register parsers
+builder.Services.AddSingleton<IParserFactory, ParserFactory>();
+builder.Services.AddSingleton<RecursiveChunkSplitter>();
+builder.Services.AddSingleton<IChunkParser, RapidYamlParser>();
+builder.Services.AddSingleton<IChunkParser, VueChunkParser>();
+builder.Services.AddSingleton<IChunkParser, MarkdownParser>();
+builder.Services.AddSingleton<IChunkParser, CodeChunkParser>();
+builder.Services.AddSingleton<IChunkParser, UniversalTextParser>();
 
 var app = builder.Build();
 

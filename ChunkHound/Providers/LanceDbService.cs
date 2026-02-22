@@ -66,9 +66,13 @@ public class LanceDbService : IDisposable
     /// </summary>
     private static void ConfigurePythonEnvironment()
     {
-        // Force use the venv's Python environment
+        // Use the base uv Python installation for PYTHONHOME
+        var pythonHome = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "uv", "python", "cpython-3.12.12-windows-x86_64-none");
+
+        // Add venv site-packages to PYTHONPATH
         var venvPath = @"e:\dev\github\chunkhound-dotnet\python-deps\.venv";
-        var pythonHome = venvPath;
         var pythonPath = Path.Combine(venvPath, "Lib", "site-packages");
 
         // Set environment variables for pythonnet
@@ -76,10 +80,7 @@ public class LanceDbService : IDisposable
         Environment.SetEnvironmentVariable("PYTHONPATH", pythonPath);
 
         // Set the Python DLL path for pythonnet (must be set before PythonEngine.Initialize)
-        // For uv-managed venvs, the DLL is in the uv python installation directory
-        var pythonDllPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "uv", "python", "cpython-3.12.12-windows-x86_64-none", "python312.dll");
+        var pythonDllPath = Path.Combine(pythonHome, "python312.dll");
 
         if (System.IO.File.Exists(pythonDllPath))
         {
