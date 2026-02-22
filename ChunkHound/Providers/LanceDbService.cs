@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Python.Runtime;
+using ChunkHound.Core.Python;
 
 namespace ChunkHound.Providers;
 
@@ -34,59 +35,14 @@ public class LanceDbService : IDisposable
 
         _logger = logger;
 
-        InitializePythonEngine();
+        PythonRuntimeManager.EnsureInitialized();
+        _logger?.LogInformation("PythonRuntimeManager ensured initialization");
         InitializeDatabase(dbPath);
     }
 
-    /// <summary>
-    /// Initializes the Python runtime engine.
-    /// </summary>
-    private void InitializePythonEngine()
-    {
-        try
-        {
-            if (!PythonEngine.IsInitialized)
-            {
-                // Configure Python environment before initialization
-                ConfigurePythonEnvironment();
 
-                PythonEngine.Initialize();
-                _logger?.LogInformation("Python engine initialized");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Failed to initialize Python engine");
-            throw;
-        }
-    }
 
-    /// <summary>
-    /// Configures Python environment for virtual environment support.
-    /// </summary>
-    private static void ConfigurePythonEnvironment()
-    {
-        // Use the base uv Python installation for PYTHONHOME
-        var pythonHome = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "uv", "python", "cpython-3.12.12-windows-x86_64-none");
 
-        // Add venv site-packages to PYTHONPATH
-        var venvPath = @"e:\dev\github\chunkhound-dotnet\python-deps\.venv";
-        var pythonPath = Path.Combine(venvPath, "Lib", "site-packages");
-
-        // Set environment variables for pythonnet
-        Environment.SetEnvironmentVariable("PYTHONHOME", pythonHome);
-        Environment.SetEnvironmentVariable("PYTHONPATH", pythonPath);
-
-        // Set the Python DLL path for pythonnet (must be set before PythonEngine.Initialize)
-        var pythonDllPath = Path.Combine(pythonHome, "python312.dll");
-
-        if (System.IO.File.Exists(pythonDllPath))
-        {
-            Runtime.PythonDLL = pythonDllPath;
-        }
-    }
 
     /// <summary>
     /// Initializes the LanceDB database connection and tables.
@@ -95,10 +51,10 @@ public class LanceDbService : IDisposable
     private void InitializeDatabase(string dbPath)
     {
         var threadId = Thread.CurrentThread.ManagedThreadId;
-        _logger?.LogDebug("InitializeDatabase dbPath={DbPath} Thread={ThreadId}: Acquiring GIL", dbPath, threadId);
+        _logger?.LogDebug("Acquiring Python GIL on thread {ThreadId}...", threadId);
         using (Py.GIL())
         {
-            _logger?.LogDebug("InitializeDatabase dbPath={DbPath} Thread={ThreadId}: Acquired GIL", dbPath, threadId);
+            _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
             try
             {
                 // Ensure the venv site-packages is in sys.path
@@ -124,8 +80,9 @@ public class LanceDbService : IDisposable
                 _logger?.LogError(ex, "InitializeDatabase dbPath={DbPath} Thread={ThreadId}: Failed to initialize LanceDB database", dbPath, threadId);
                 throw;
             }
+            _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
         }
-        _logger?.LogDebug("InitializeDatabase dbPath={DbPath} Thread={ThreadId}: GIL released", dbPath, threadId);
+        _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
     }
 
     /// <summary>
@@ -160,10 +117,10 @@ public class LanceDbService : IDisposable
             throw new InvalidOperationException("LanceDB service not initialized");
 
         var threadId = Thread.CurrentThread.ManagedThreadId;
-        _logger?.LogDebug("Search Thread={ThreadId}: Acquiring GIL", threadId);
+        _logger?.LogDebug("Acquiring Python GIL on thread {ThreadId}...", threadId);
         using (Py.GIL())
         {
-            _logger?.LogDebug("Search Thread={ThreadId}: Acquired GIL", threadId);
+            _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
             try
             {
                 // Convert C# array to Python list
@@ -202,8 +159,9 @@ public class LanceDbService : IDisposable
                 _logger?.LogError(ex, "Search Thread={ThreadId}: Vector search failed", threadId);
                 throw;
             }
+            _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
         }
-        _logger?.LogDebug("Search Thread={ThreadId}: GIL released", threadId);
+        _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
     }
 
     /// <summary>
@@ -222,10 +180,10 @@ public class LanceDbService : IDisposable
         _logger?.LogDebug("AddBatch table={TableName} Thread={ThreadId}: Acquired write semaphore", tableName, threadId);
         try
         {
-            _logger?.LogDebug("AddBatch table={TableName} Thread={ThreadId}: Acquiring GIL", tableName, threadId);
+            _logger?.LogDebug("Acquiring Python GIL on thread {ThreadId}...", threadId);
             using (Py.GIL())
             {
-                _logger?.LogDebug("AddBatch table={TableName} Thread={ThreadId}: Acquired GIL", tableName, threadId);
+                _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
                 dynamic table = tableName == "chunks" ? _chunksTable : _filesTable;
 
                 if (table == null)
@@ -251,8 +209,9 @@ public class LanceDbService : IDisposable
                 // Add records
                 table.add(pyRecords);
                 _logger?.LogDebug("AddBatch table={TableName} Thread={ThreadId}: Added {Count} records", tableName, threadId, pyRecords.Length());
+                _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
             }
-            _logger?.LogDebug("AddBatch table={TableName} Thread={ThreadId}: GIL released", tableName, threadId);
+            _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
         }
         catch (Exception ex)
         {
@@ -343,11 +302,11 @@ public class LanceDbService : IDisposable
             throw new InvalidOperationException("LanceDB service not initialized");
 
         var threadId = Thread.CurrentThread.ManagedThreadId;
-        _logger?.LogDebug("Query table={TableName} Thread={ThreadId}: Acquiring GIL", tableName, threadId);
+        _logger?.LogDebug("Acquiring Python GIL on thread {ThreadId}...", threadId);
         var searchResults = new List<Dictionary<string, object>>();
         using (Py.GIL())
         {
-            _logger?.LogDebug("Query table={TableName} Thread={ThreadId}: Acquired GIL", tableName, threadId);
+            _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
             try
             {
                 dynamic table = tableName == "chunks" ? _chunksTable : _filesTable;
@@ -388,9 +347,10 @@ public class LanceDbService : IDisposable
                 _logger?.LogError(ex, "Query table={TableName} Thread={ThreadId}: failed", tableName, threadId);
                 throw;
             }
+            _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
         }
-        _logger?.LogDebug("Query table={TableName} Thread={ThreadId}: GIL released", tableName, threadId);
-        
+        _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
+
         return searchResults;
     }
 
@@ -409,10 +369,10 @@ public class LanceDbService : IDisposable
         _logger?.LogDebug("UpdateEmbeddings Thread={ThreadId}: Acquired write semaphore", threadId);
         try
         {
-            _logger?.LogDebug("UpdateEmbeddings Thread={ThreadId}: Acquiring GIL", threadId);
+            _logger?.LogDebug("Acquiring Python GIL on thread {ThreadId}...", threadId);
             using (Py.GIL())
             {
-                _logger?.LogDebug("UpdateEmbeddings Thread={ThreadId}: Acquired GIL", threadId);
+                _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
                 if (_chunksTable == null)
                 {
                     // Create table if it doesn't exist
@@ -435,8 +395,9 @@ public class LanceDbService : IDisposable
                 _chunksTable.merge_insert("id").when_matched_update_all().when_not_matched_insert_all().execute(pyRecords);
 
                 _logger?.LogDebug("UpdateEmbeddings Thread={ThreadId}: Updated embeddings for {Count} chunks", threadId, pyRecords.Length());
+                _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
             }
-            _logger?.LogDebug("UpdateEmbeddings Thread={ThreadId}: GIL released", threadId);
+            _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
         }
         catch (Exception ex)
         {
@@ -465,10 +426,10 @@ public class LanceDbService : IDisposable
         _logger?.LogDebug("Optimize Thread={ThreadId}: Acquired write semaphore", threadId);
         try
         {
-            _logger?.LogDebug("Optimize Thread={ThreadId}: Acquiring GIL", threadId);
+            _logger?.LogDebug("Acquiring Python GIL on thread {ThreadId}...", threadId);
             using (Py.GIL())
             {
-                _logger?.LogDebug("Optimize Thread={ThreadId}: Acquired GIL", threadId);
+                _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
                 if (_chunksTable != null)
                     _chunksTable.optimize();
 
@@ -476,8 +437,9 @@ public class LanceDbService : IDisposable
                     _filesTable.optimize();
 
                 _logger?.LogInformation("Database optimization completed");
+                _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
             }
-            _logger?.LogDebug("Optimize Thread={ThreadId}: GIL released", threadId);
+            _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
         }
         catch (Exception ex)
         {
@@ -503,10 +465,10 @@ public class LanceDbService : IDisposable
             throw new InvalidOperationException("LanceDB service not initialized");
 
         var threadId = Thread.CurrentThread.ManagedThreadId;
-        _logger?.LogDebug("GetTableStats table={TableName} Thread={ThreadId}: Acquiring GIL", tableName, threadId);
+        _logger?.LogDebug("Acquiring Python GIL on thread {ThreadId}...", threadId);
         using (Py.GIL())
         {
-            _logger?.LogDebug("GetTableStats table={TableName} Thread={ThreadId}: Acquired GIL", tableName, threadId);
+            _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
             try
             {
                 dynamic table = tableName == "chunks" ? _chunksTable : _filesTable;
@@ -531,8 +493,9 @@ public class LanceDbService : IDisposable
                 _logger?.LogError(ex, "GetTableStats table={TableName} Thread={ThreadId}: Failed to get table stats", tableName, threadId);
                 return new Dictionary<string, object>();
             }
+            _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
         }
-        _logger?.LogDebug("GetTableStats table={TableName} Thread={ThreadId}: GIL released", tableName, threadId);
+        _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
     }
 
     /// <summary>
@@ -549,10 +512,10 @@ public class LanceDbService : IDisposable
         _logger?.LogDebug("ClearAllData: Thread {ThreadId}: Acquired write semaphore", threadId);
         try
         {
-            _logger?.LogDebug("ClearAllData: Thread {ThreadId}: Acquiring GIL", threadId);
+            _logger?.LogDebug("Acquiring Python GIL on thread {ThreadId}...", threadId);
             using (Py.GIL())
             {
-                _logger?.LogDebug("ClearAllData: Thread {ThreadId}: Acquired GIL", threadId);
+                _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
                 _logger?.LogDebug("ClearAllData: Thread {ThreadId}: Starting table operations", threadId);
                 // Delete all data from existing tables instead of dropping
                 try
@@ -580,8 +543,9 @@ public class LanceDbService : IDisposable
                 // Keep table references, just clear data
 
                 _logger?.LogInformation("Cleared all data (rows deleted)");
+                _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
             }
-            _logger?.LogDebug("ClearAllData: Thread {ThreadId}: GIL released", threadId);
+            _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
         }
         finally
         {
@@ -603,15 +567,16 @@ public class LanceDbService : IDisposable
         // Close the database connection to release GIL
         if (_db != null)
         {
-            _logger?.LogDebug("Dispose Thread={ThreadId}: Acquiring GIL for db.close()", threadId);
+            _logger?.LogDebug("Acquiring Python GIL on thread {ThreadId}...", threadId);
             try
             {
                 using (Py.GIL())
                 {
-                    _logger?.LogDebug("Dispose Thread={ThreadId}: Acquired GIL for db.close()", threadId);
+                    _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
                     _db.close();
+                    _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
                 }
-                _logger?.LogDebug("Dispose Thread={ThreadId}: GIL released after db.close()", threadId);
+                _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
             }
             catch (Exception ex)
             {

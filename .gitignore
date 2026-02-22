@@ -55,3 +55,5 @@ coverage/
 # chunkhound
 .chunkhound/
 .chunkhound1/
+python-deps/benchmark_results.json
+

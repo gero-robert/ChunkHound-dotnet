@@ -91,3 +91,13 @@ public void LineCount_ReturnsCorrectCount() // DON'T WRITE THIS
 - **Maintainability**: Makes it easier to understand and refactor tests over time.
 - **Cost Efficiency**: Avoids wasting time on tests that don't catch real bugs.
 
+## Python Interop Rules (Python.NET + LanceDB)
+
+- **Single initialization point**: Always call `PythonRuntimeManager.EnsureInitialized()` (never `PythonEngine.Initialize()` directly).  
+- This manager lives in production (`ChunkHound/Core/Python/`) because the Python runtime is process-global.  
+- Tests must only consume it — never re-initialize.  
+- Every `using (Py.GIL())` must be wrapped with Debug logs (enter/acquire/release) for troubleshooting hangs.  
+- Cross-platform support required (Windows/Linux/macOS) via OS detection + env var overrides.  
+
+Reason: Prevents GIL deadlocks under parallel test runners (VS Code, xUnit). Production owns the contract.
+
