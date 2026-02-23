@@ -42,5 +42,10 @@ namespace ChunkHound.Core
         /// The file ID assigned during processing.
         /// </summary>
         public int FileId { get; init; }
+
+        /// <summary>
+        /// The chunks extracted from the file.
+        /// </summary>
+        public List<Chunk> Chunks { get; init; } = new();
     }
 }

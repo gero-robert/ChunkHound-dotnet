@@ -193,7 +193,8 @@ public class IndexingCoordinator : IIndexingCoordinator
                 Status = FileProcessingStatus.Success,
                 ChunksProcessed = chunks.Count,
                 ChunksStored = storeResult.ChunksStored,
-                FileId = storeResult.FileId
+                FileId = storeResult.FileId,
+                Chunks = chunks
             };
         }
         finally
@@ -209,58 +210,37 @@ public class IndexingCoordinator : IIndexingCoordinator
         List<string> files,
         CancellationToken cancellationToken)
     {
-        // Start worker tasks
-        var parseWorkers = Enumerable.Range(0, _config?.ParseWorkers ?? 4)
-            .Select(_ => Task.Run(() => ParseWorkerAsync(cancellationToken)))
-            .ToArray();
-
-        var embedWorkers = _embeddingProvider != null ?
-            Enumerable.Range(0, _config?.EmbedWorkers ?? 2)
-                .Select(_ => Task.Run(() => EmbedWorkerAsync(cancellationToken)))
-                .ToArray() : Array.Empty<Task>();
-
-        var storeWorkers = new List<Task>();
-        for (int i = 0; i < (_config?.StoreWorkers ?? 2); i++)
+        var parseChannel = Channel.CreateBounded<FileProcessingResult>(new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait });
+        var storeChannel = Channel.CreateBounded<Chunk>(new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait });
+        Channel<Chunk>? embedChannel = null;
+        List<Task>? embedWorkers = null;
+        if (_embeddingProvider != null)
         {
-            storeWorkers.Add(Task.Run(() => StoreWorkerAsync(cancellationToken)));
+            embedChannel = Channel.CreateBounded<Chunk>(new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait });
+            embedWorkers = Enumerable.Range(0, _config?.EmbedWorkers ?? 2).Select(i => Task.Run(() => RunEmbedWorker(embedChannel!.Reader, storeChannel.Writer, cancellationToken))).ToList();
+            _logger.LogInformation("Embed stage active");
         }
+        List<Task> parseWorkers = Enumerable.Range(0, _config?.ParseWorkers ?? 4).Select(i => Task.Run(() => RunParseWorker(parseChannel.Reader, (embedChannel ?? storeChannel).Writer, cancellationToken))).ToList();
+        List<Task> storeWorkers = Enumerable.Range(0, _config?.StoreWorkers ?? 2).Select(i => Task.Run(() => RunStoreWorker(storeChannel.Reader, cancellationToken))).ToList();
+        _logger.LogInformation("Parse stage started");
 
-        // Write all files to channel
+        // Producer
         foreach (var file in files)
         {
-            await _filesChannel.Writer.WriteAsync(file, cancellationToken);
-        }
-        _filesChannel.Writer.Complete();
-
-        // Give store workers a chance to start
-        await Task.Yield();
-        await Task.Delay(100);
-
-        // Wait for parse workers to complete
-        await Task.WhenAll(parseWorkers);
-
-        if (_embeddingProvider == null)
-        {
-            // Give store workers a chance to start reading
-            await Task.Delay(10);
-            // Complete chunks channel for store workers
-            _chunksChannel.Writer.Complete();
-        }
-        else
-        {
-            // Complete chunks channel for embed workers
-            _chunksChannel.Writer.Complete();
-
-            // Wait for embed workers to complete and complete embed chunks channel
-            if (embedWorkers.Any())
+            var chunks = await ParseFileAsync(file, cancellationToken);
+            var fileResult = new FileProcessingResult
             {
-                await Task.WhenAll(embedWorkers);
-            }
-            _embedChunksChannel.Writer.Complete();
+                Status = FileProcessingStatus.Success,
+                ChunksProcessed = chunks.Count,
+                Chunks = chunks
+            };
+            await parseChannel.Writer.WriteAsync(fileResult, cancellationToken);
         }
+        parseChannel.Writer.Complete();
+        _logger.LogInformation("Parse input completed");
 
-        // Wait for store workers to complete
-        await Task.WhenAll(storeWorkers);
+        // Await
+        await Task.WhenAll(parseWorkers.Concat(embedWorkers ?? Enumerable.Empty<Task>()).Concat(storeWorkers));
 
         // Collect results
         return await CollectPipelineResultsAsync();
@@ -311,7 +291,7 @@ public class IndexingCoordinator : IIndexingCoordinator
                 {
                     try
                     {
-                        var texts = batch.Select(c => c.Code).ToList();
+                        var texts = batch.Select(c => c.Content).ToList();
                         var embeddings = await _embeddingProvider!.EmbedAsync(texts, cancellationToken);
 
                         for (var i = 0; i < batch.Count; i++)
@@ -486,6 +466,139 @@ public class IndexingCoordinator : IIndexingCoordinator
     }
 
     /// <summary>
+    /// Worker that reads FileProcessingResult from channel, and writes chunks to next channel.
+    /// </summary>
+    private async Task RunParseWorker(ChannelReader<FileProcessingResult> reader, ChannelWriter<Chunk> nextWriter, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (var fileResult in reader.ReadAllAsync(cancellationToken))
+            {
+                foreach (var chunk in fileResult.Chunks)
+                {
+                    await nextWriter.WriteAsync(chunk, cancellationToken);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Parse worker failed");
+        }
+        finally
+        {
+            nextWriter.TryComplete();
+        }
+    }
+
+    /// <summary>
+    /// Worker that reads chunks from channel, generates embeddings, and writes chunks to next channel.
+    /// </summary>
+    private async Task RunEmbedWorker(ChannelReader<Chunk> reader, ChannelWriter<Chunk> nextWriter, CancellationToken cancellationToken)
+    {
+        var batch = new List<Chunk>();
+        var batchSize = _config?.EmbeddingBatchSize ?? 100;
+
+        try
+        {
+            await foreach (var chunk in reader.ReadAllAsync(cancellationToken))
+            {
+                batch.Add(chunk);
+                if (batch.Count >= batchSize)
+                {
+                    await ProcessEmbedBatch(batch, nextWriter, cancellationToken);
+                    batch.Clear();
+                }
+            }
+            if (batch.Count > 0)
+            {
+                await ProcessEmbedBatch(batch, nextWriter, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Embed worker failed");
+        }
+        finally
+        {
+            nextWriter.TryComplete();
+        }
+    }
+
+    /// <summary>
+    /// Worker that reads chunks from channel and stores them in the database.
+    /// </summary>
+    private async Task RunStoreWorker(ChannelReader<Chunk> reader, CancellationToken cancellationToken)
+    {
+        var batchSize = _config?.DatabaseBatchSize ?? 1000;
+        var batch = new List<Chunk>();
+
+        try
+        {
+            await foreach (var chunk in reader.ReadAllAsync(cancellationToken))
+            {
+                batch.Add(chunk);
+                if (batch.Count >= batchSize)
+                {
+                    await ProcessStoreBatch(batch, cancellationToken);
+                    batch.Clear();
+                }
+            }
+            if (batch.Count > 0)
+            {
+                await ProcessStoreBatch(batch, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Store worker failed");
+        }
+    }
+
+    /// <summary>
+    /// Processes a batch of chunks for embedding.
+    /// </summary>
+    private async Task ProcessEmbedBatch(List<Chunk> batch, ChannelWriter<Chunk> nextWriter, CancellationToken cancellationToken)
+    {
+        var texts = batch.Select(c => c.Content).ToList();
+        var embeddings = await _embeddingProvider!.EmbedAsync(texts, cancellationToken);
+
+        for (var i = 0; i < batch.Count; i++)
+        {
+            var chunk = batch[i] with { Embedding = new ReadOnlyMemory<float>(embeddings[i].ToArray()) };
+            await nextWriter.WriteAsync(chunk, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Processes a batch of chunks for storage.
+    /// </summary>
+    private async Task ProcessStoreBatch(List<Chunk> batch, CancellationToken cancellationToken)
+    {
+        await ExecuteWithLockAsync(async () =>
+        {
+            var chunkIds = await _databaseProvider.InsertChunksBatchAsync(batch, cancellationToken);
+
+            var embeddings = batch.Where(c => c.Embedding != null).Select(c => c.Embedding!.Value.ToArray().ToList()).ToList();
+            if (embeddings.Any())
+            {
+                await _databaseProvider.InsertEmbeddingsBatchAsync(chunkIds, embeddings, cancellationToken);
+            }
+
+            Interlocked.Add(ref _chunksStored, chunkIds.Count);
+            return chunkIds.Count;
+        }, writeLock: true, cancellationToken);
+    }
+
+    /// <summary>
     /// Parses a single file and returns chunks (used by worker pipeline).
     /// </summary>
     private async Task<List<Chunk>> ParseFileAsync(
@@ -641,10 +754,11 @@ public class IndexingCoordinator : IIndexingCoordinator
     {
         var relativePath = Path.GetRelativePath(_baseDirectory, filePath);
         var fileInfo = new FileInfo(filePath);
+        var language = await DetectFileLanguageAsync(filePath);
         var file = new FileModel(
             path: relativePath,
             mtime: new DateTimeOffset(fileInfo.LastWriteTimeUtc).ToUnixTimeSeconds(),
-            language: chunks.FirstOrDefault()?.Language ?? Language.Unknown,
+            language: language,
             sizeBytes: fileInfo.Length
         );
 

@@ -29,12 +29,17 @@ public sealed record Chunk
     /// <summary>
     /// Reference to the parent file
     /// </summary>
-    public string FileId { get; init; }
+    public int FileId { get; init; }
 
     /// <summary>
     /// Raw code content
     /// </summary>
     public string Content { get; init; }
+
+    /// <summary>
+    /// Alias for Content
+    /// </summary>
+    public string Code => Content;
 
     /// <summary>
     /// Starting line number (1-based)
@@ -45,6 +50,26 @@ public sealed record Chunk
     /// Ending line number (1-based, inclusive)
     /// </summary>
     public int EndLine { get; init; }
+
+    /// <summary>
+    /// Programming language
+    /// </summary>
+    public Language Language { get; init; }
+
+    /// <summary>
+    /// Type of chunk
+    /// </summary>
+    public ChunkType ChunkType { get; init; }
+
+    /// <summary>
+    /// Symbol name
+    /// </summary>
+    public string? Symbol { get; init; }
+
+    /// <summary>
+    /// File path
+    /// </summary>
+    public string? FilePath { get; init; }
 
     /// <summary>
     /// Language-specific metadata
@@ -69,10 +94,10 @@ public sealed record Chunk
     /// <summary>
     /// Initializes a new instance of the Chunk class.
     /// </summary>
-    public Chunk(string id, string fileId, string content, int startLine, int endLine, IReadOnlyDictionary<string, object>? metadata = null, ReadOnlyMemory<float>? embedding = null, DateTimeOffset createdAt = default, DateTimeOffset updatedAt = default)
+    public Chunk(string id, int fileId, string content, int startLine, int endLine, Language language = Language.Unknown, ChunkType chunkType = ChunkType.Unknown, string? symbol = null, string? filePath = null, IReadOnlyDictionary<string, object>? metadata = null, ReadOnlyMemory<float>? embedding = null, DateTimeOffset createdAt = default, DateTimeOffset updatedAt = default)
     {
         if (string.IsNullOrEmpty(id)) throw new ArgumentNullException(nameof(id));
-        if (string.IsNullOrEmpty(fileId)) throw new ArgumentNullException(nameof(fileId));
+        if (fileId < 0) throw new ArgumentException("FileId must be non-negative", nameof(fileId));
         if (string.IsNullOrEmpty(content)) throw new ArgumentNullException(nameof(content));
         if (startLine < 1 || endLine < startLine || startLine > endLine) throw new ValidationException("Invalid line range");
         Id = id;
@@ -80,6 +105,10 @@ public sealed record Chunk
         Content = content;
         StartLine = startLine;
         EndLine = endLine;
+        Language = language;
+        ChunkType = chunkType;
+        Symbol = symbol;
+        FilePath = filePath;
         Metadata = (metadata ?? ImmutableDictionary<string, object>.Empty).ToImmutableDictionary();
         Embedding = embedding;
         CreatedAt = createdAt == default ? DateTimeOffset.UtcNow : createdAt;
@@ -87,39 +116,47 @@ public sealed record Chunk
     }
 
     /// <summary>
+    /// Initializes a new instance of the Chunk class (legacy constructor).
+    /// </summary>
+    public Chunk(string id, int startLine, int endLine, string content, ChunkType chunkType, int fileId, Language language)
+        : this(id, fileId, content, startLine, endLine, language, chunkType, id, null)
+    {
+    }
+
+    /// <summary>
     /// Creates a new Chunk instance with the specified ID.
     /// </summary>
-    public Chunk WithId(string id) => new(id, FileId, Content, StartLine, EndLine, Metadata, Embedding, CreatedAt, UpdatedAt);
+    public Chunk WithId(string id) => new(id, FileId, Content, StartLine, EndLine, Language, ChunkType, Symbol, FilePath, Metadata, Embedding, CreatedAt, UpdatedAt);
 
     /// <summary>
     /// Creates a new Chunk instance with the specified file ID.
     /// </summary>
-    public Chunk WithFileId(string fileId) => new(Id, fileId, Content, StartLine, EndLine, Metadata, Embedding, CreatedAt, UpdatedAt);
+    public Chunk WithFileId(int fileId) => new(Id, fileId, Content, StartLine, EndLine, Language, ChunkType, Symbol, FilePath, Metadata, Embedding, CreatedAt, UpdatedAt);
 
     /// <summary>
     /// Creates a new Chunk instance with the specified content.
     /// </summary>
-    public Chunk WithContent(string content) => new(Id, FileId, content, StartLine, EndLine, Metadata, Embedding, CreatedAt, UpdatedAt);
+    public Chunk WithContent(string content) => new(Id, FileId, content, StartLine, EndLine, Language, ChunkType, Symbol, FilePath, Metadata, Embedding, CreatedAt, UpdatedAt);
 
     /// <summary>
     /// Creates a new Chunk instance with the specified line range.
     /// </summary>
-    public Chunk WithLines(int start, int end) => new(Id, FileId, Content, start, end, Metadata, Embedding, CreatedAt, UpdatedAt);
+    public Chunk WithLines(int start, int end) => new(Id, FileId, Content, start, end, Language, ChunkType, Symbol, FilePath, Metadata, Embedding, CreatedAt, UpdatedAt);
 
     /// <summary>
     /// Creates a new Chunk instance with the specified metadata.
     /// </summary>
-    public Chunk WithMetadata(IReadOnlyDictionary<string, object> meta) => new(Id, FileId, Content, StartLine, EndLine, meta, Embedding, CreatedAt, UpdatedAt);
+    public Chunk WithMetadata(IReadOnlyDictionary<string, object> meta) => new(Id, FileId, Content, StartLine, EndLine, Language, ChunkType, Symbol, FilePath, meta, Embedding, CreatedAt, UpdatedAt);
 
     /// <summary>
     /// Creates a new Chunk instance with the specified embedding.
     /// </summary>
-    public Chunk WithEmbedding(ReadOnlyMemory<float>? emb) => new(Id, FileId, Content, StartLine, EndLine, Metadata, emb, CreatedAt, UpdatedAt);
+    public Chunk WithEmbedding(ReadOnlyMemory<float>? emb) => new(Id, FileId, Content, StartLine, EndLine, Language, ChunkType, Symbol, FilePath, Metadata, emb, CreatedAt, UpdatedAt);
 
     /// <summary>
     /// Creates a new Chunk instance with the specified timestamps.
     /// </summary>
-    public Chunk WithTimestamps(DateTimeOffset created, DateTimeOffset updated) => new(Id, FileId, Content, StartLine, EndLine, Metadata, Embedding, created, updated);
+    public Chunk WithTimestamps(DateTimeOffset created, DateTimeOffset updated) => new(Id, FileId, Content, StartLine, EndLine, Language, ChunkType, Symbol, FilePath, Metadata, Embedding, created, updated);
 
     /// <summary>
     /// Creates a new Chunk instance with the updated timestamp.
@@ -133,8 +170,7 @@ public sealed record Chunk
     {
         var id = dict.GetValueOrDefault(IdField)?.ToString();
         if (string.IsNullOrEmpty(id)) throw new ValidationException("Missing id");
-        var fileId = dict.GetValueOrDefault(FileIdField)?.ToString();
-        if (string.IsNullOrEmpty(fileId)) throw new ValidationException("Missing file_id");
+        if (!int.TryParse(dict.GetValueOrDefault(FileIdField)?.ToString(), out var fileId) || fileId <= 0) throw new ValidationException("Invalid file_id");
         var content = dict.GetValueOrDefault(ContentField)?.ToString();
         if (string.IsNullOrEmpty(content)) throw new ValidationException("Missing content");
         if (!int.TryParse(dict.GetValueOrDefault(StartLineField)?.ToString(), out var sl) || sl < 1) throw new ValidationException("Invalid start_line");
@@ -149,7 +185,12 @@ public sealed record Chunk
         }
         DateTimeOffset ca = DateTimeOffset.TryParse(dict.GetValueOrDefault(CreatedAtField)?.ToString(), out var c) ? c : DateTimeOffset.UtcNow;
         DateTimeOffset ua = DateTimeOffset.TryParse(dict.GetValueOrDefault(UpdatedAtField)?.ToString(), out var u) ? u : DateTimeOffset.UtcNow;
-        return new Chunk(id, fileId, content, sl, el, meta, emb, ca, ua);
+        // For backward compatibility, set defaults
+        var language = Language.Unknown;
+        var chunkType = ChunkType.Unknown;
+        string? symbol = null;
+        string? filePath = null;
+        return new Chunk(id, fileId, content, sl, el, language, chunkType, symbol, filePath, meta, emb, ca, ua);
     }
 
     /// <summary>
@@ -158,7 +199,7 @@ public sealed record Chunk
     public Dictionary<string, object> ToDict() => new()
     {
         [IdField] = Id,
-        [FileIdField] = FileId,
+        [FileIdField] = FileId.ToString(),
         [ContentField] = Content,
         [StartLineField] = StartLine,
         [EndLineField] = EndLine,
