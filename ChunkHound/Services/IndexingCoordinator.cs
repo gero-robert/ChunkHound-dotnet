@@ -80,11 +80,7 @@ public class IndexingCoordinator : IIndexingCoordinator
     /// <param name="directoryPath">The directory to index.</param>
     public async Task IndexAsync(string directoryPath)
     {
-        var result = await ProcessDirectoryAsync(directoryPath);
-        if (result.Status != IndexingStatus.Success)
-        {
-            _logger.LogError("Indexing failed: {Error}", result.Error);
-        }
+        await ProcessDirectoryIterativeAsync(directoryPath, default);
     }
 
     /// <summary>
@@ -844,5 +840,37 @@ public class IndexingCoordinator : IIndexingCoordinator
 
         // File has changed if modification time is different
         return currentMtime != existingFile.Mtime;
+    }
+
+    private bool IsSupportedFile(string filePath)
+    {
+        var extension = Path.GetExtension(filePath).ToLowerInvariant();
+        return new[] { ".cs", ".py", ".js", ".ts", ".java", ".cpp", ".c", ".go", ".rs", ".php", ".rb" }.Contains(extension);
+    }
+
+    private bool IsIgnored(string dirPath)
+    {
+        var name = Path.GetFileName(dirPath);
+        return name.StartsWith('.') || name is "bin" or "obj" or "node_modules" or ".git";
+    }
+
+    private async Task ProcessFilesAsync(IEnumerable<string> files, CancellationToken ct)
+    {
+        var filesToProcess = await FilterChangedFilesAsync(files.ToList(), ct);
+        await ProcessFilesPipelineAsync(filesToProcess, ct);
+    }
+
+    private async Task ProcessDirectoryIterativeAsync(string rootPath, CancellationToken ct)
+    {
+        var directories = new Queue<string>();
+        directories.Enqueue(rootPath);
+        while (directories.TryDequeue(out var dir) && !ct.IsCancellationRequested)
+        {
+            var files = Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly).Where(IsSupportedFile);
+            await ProcessFilesAsync(files, ct);
+            var subdirs = Directory.EnumerateDirectories(dir).Where(d => !IsIgnored(d));
+            foreach(var sub in subdirs) directories.Enqueue(sub);
+            _logger.LogDebug("Processed dir {Dir}, queued {Count} subdirs", dir, directories.Count);
+        }
     }
 }
