@@ -391,14 +391,18 @@ namespace ChunkHound.Parsers
 
             return new Chunk(
                 uc.Name,
+                fileId,
+                uc.Content,
                 uc.StartLine,
                 uc.EndLine,
-                uc.Content,
-                chunkType,
-                fileId,
                 language,
-                filePath: filePath,
-                metadata: uc.Metadata
+                chunkType,
+                null,
+                filePath,
+                uc.Metadata,
+                null,
+                default,
+                default
             );
         }
     }

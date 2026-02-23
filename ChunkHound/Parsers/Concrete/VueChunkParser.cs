@@ -50,11 +50,18 @@ public class VueChunkParser : IChunkParser
 
                 var chunk = new Chunk(
                     Guid.NewGuid().ToString(),
-                    "0",
+                    0,
                     templateContent,
                     startLine,
                     endLine,
-                    new Dictionary<string, object> { ["symbol"] = "template", ["chunkType"] = ChunkType.Vue, ["language"] = Language.Unknown });
+                    Language.Unknown,
+                    ChunkType.Vue,
+                    "template",
+                    null,
+                    new Dictionary<string, object> { ["chunkType"] = ChunkType.Vue, ["language"] = Language.Unknown },
+                    null,
+                    default,
+                    default);
                 chunks.Add(chunk);
             }
         }
@@ -71,11 +78,18 @@ public class VueChunkParser : IChunkParser
 
                 var chunk = new Chunk(
                     Guid.NewGuid().ToString(),
-                    "0",
+                    0,
                     scriptContent,
                     startLine,
                     endLine,
-                    new Dictionary<string, object> { ["symbol"] = "script", ["chunkType"] = ChunkType.Vue, ["language"] = Language.JavaScript });
+                    Language.JavaScript,
+                    ChunkType.Vue,
+                    "script",
+                    null,
+                    new Dictionary<string, object> { ["chunkType"] = ChunkType.Vue },
+                    null,
+                    default,
+                    default);
                 chunks.Add(chunk);
             }
         }
@@ -95,11 +109,18 @@ public class VueChunkParser : IChunkParser
 
                     var chunk = new Chunk(
                         Guid.NewGuid().ToString(),
-                        "0",
+                        0,
                         styleContent,
                         startLine,
                         endLine,
-                        new Dictionary<string, object> { ["symbol"] = styleNodes.Count > 1 ? $"style_{i + 1}" : "style", ["chunkType"] = ChunkType.Vue, ["language"] = Language.Unknown });
+                        Language.Unknown,
+                        ChunkType.Vue,
+                        styleNodes.Count > 1 ? $"style_{i + 1}" : "style",
+                        null,
+                        new Dictionary<string, object> { ["chunkType"] = ChunkType.Vue },
+                        null,
+                        default,
+                        default);
                     chunks.Add(chunk);
                 }
             }
@@ -110,11 +131,18 @@ public class VueChunkParser : IChunkParser
         {
             var chunk = new Chunk(
                 Guid.NewGuid().ToString(),
-                "0",
+                0,
                 content,
                 1,
                 lines.Length,
-                new Dictionary<string, object> { ["symbol"] = Path.GetFileNameWithoutExtension(filePath), ["chunkType"] = ChunkType.Unknown, ["language"] = Language.Unknown });
+                Language.Unknown,
+                ChunkType.Unknown,
+                Path.GetFileNameWithoutExtension(filePath),
+                null,
+                new Dictionary<string, object> { ["chunkType"] = ChunkType.Unknown },
+                null,
+                default,
+                default);
             chunks.Add(chunk);
         }
 

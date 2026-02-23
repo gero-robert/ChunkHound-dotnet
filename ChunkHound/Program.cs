@@ -18,9 +18,10 @@ Log.Logger = new LoggerConfiguration()
 builder.Services.AddSerilog();
 
 // Register services
+builder.Services.AddSingleton<CSharpParser>();
 builder.Services.AddSingleton<Dictionary<Language, IUniversalParser>>(sp => {
   var dict = new Dictionary<Language, IUniversalParser>();
-  dict[Language.CSharp] = sp.GetRequiredService<UniversalParser>(); // stub dispatcher
+  dict[Language.CSharp] = sp.GetRequiredService<CSharpParser>();
   return dict;
 });
 builder.Services.AddSingleton<ChunkCacheService>();
@@ -36,7 +37,7 @@ builder.Services.AddSingleton<IIndexingCoordinator>(sp =>
         sp.GetRequiredService<ILogger<IndexingCoordinator>>(),
         sp.GetService<IProgress<IndexingProgress>>()
     ));
-builder.Services.AddSingleton<IUniversalParser, UniversalParser>();
+builder.Services.AddSingleton<IUniversalParser>(sp => new UniversalParser(sp.GetRequiredService<ILogger<UniversalParser>>(), sp.GetRequiredService<ILanguageConfigProvider>(), sp.GetRequiredService<Dictionary<Language, IUniversalParser>>()));
 builder.Services.AddSingleton<IEmbeddingProvider, EmbeddingProvider>();
 builder.Services.AddSingleton<IDatabaseProvider, DatabaseProvider>();
 builder.Services.AddSingleton<ILanguageConfigProvider, LanguageConfigProvider>();

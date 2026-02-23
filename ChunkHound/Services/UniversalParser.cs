@@ -17,15 +17,17 @@ public class UniversalParser : IUniversalParser
 {
     private readonly ILogger<UniversalParser> _logger;
     private readonly ILanguageConfigProvider _config;
+    private readonly Dictionary<Language, IUniversalParser> _parsers;
     private readonly IParserFactory _factory;
     private readonly RecursiveChunkSplitter _splitter;
     private long _totalFilesParsed;
     private long _totalChunksCreated;
 
-    public UniversalParser(ILogger<UniversalParser> logger, ILanguageConfigProvider config, IParserFactory? factory = null, RecursiveChunkSplitter? splitter = null)
+    public UniversalParser(ILogger<UniversalParser> logger, ILanguageConfigProvider config, Dictionary<Language, IUniversalParser> parsers, IParserFactory? factory = null, RecursiveChunkSplitter? splitter = null)
     {
         _logger = logger;
         _config = config ?? new LanguageConfigProvider();
+        _parsers = parsers;
         _factory = factory;
         _splitter = splitter;
         _totalFilesParsed = 0;
@@ -46,20 +48,25 @@ public class UniversalParser : IUniversalParser
 
         try
         {
-            // Read file content with encoding detection
-            var content = await ReadFileContentAsync(file.Path);
-
-            // Normalize content for consistent parsing
-            content = NormalizeContent(content);
-
-            var chunks = await ParseContentAsync(content, file);
-
-            _logger.LogInformation("Parsed {FilePath}: {ChunkCount} chunks created", file.Path, chunks.Count);
-
-            Interlocked.Increment(ref _totalFilesParsed);
-            Interlocked.Add(ref _totalChunksCreated, chunks.Count);
-
-            return chunks;
+            if (_parsers.TryGetValue(file.Language, out var p))
+            {
+                var chunks = await p.ParseAsync(file);
+                _logger.LogInformation("Parsed {FilePath}: {ChunkCount} chunks created", file.Path, chunks.Count);
+                Interlocked.Increment(ref _totalFilesParsed);
+                Interlocked.Add(ref _totalChunksCreated, chunks.Count);
+                return chunks;
+            }
+            else
+            {
+                // fallback to basic chunking
+                var content = await ReadFileContentAsync(file.Path);
+                content = NormalizeContent(content);
+                var chunks = await ParseWithBasicChunkingAsync(content, file);
+                _logger.LogInformation("Parsed {FilePath}: {ChunkCount} chunks created", file.Path, chunks.Count);
+                Interlocked.Increment(ref _totalFilesParsed);
+                Interlocked.Add(ref _totalChunksCreated, chunks.Count);
+                return chunks;
+            }
         }
         catch (Exception ex)
         {
@@ -227,14 +234,13 @@ public class UniversalParser : IUniversalParser
         var symbol = ExtractSymbol(content, file.Language);
 
         return new Chunk(
-            symbol: symbol,
-            startLine: startLine,
-            endLine: endLine,
-            code: content,
-            chunkType: chunkType,
-            fileId: file.Id ?? 0,
-            language: file.Language,
-            filePath: file.Path
+            Guid.NewGuid().ToString(),
+            startLine,
+            endLine,
+            content,
+            chunkType,
+            file.Id ?? 0,
+            file.Language
         );
     }
 
@@ -361,14 +367,19 @@ public class UniversalParser : IUniversalParser
                 {
                     var chunkContent = string.Join("\n", currentLines.Take(currentLines.Count - 1));
                     var newChunk = new Chunk(
-                        symbol: null,
-                        startLine: currentStartLine,
-                        endLine: currentStartLine + currentLines.Count - 2,
-                        code: chunkContent,
-                        chunkType: ChunkType.Unknown,
-                        fileId: chunk.FileId,
-                        language: chunk.Language,
-                        filePath: chunk.FilePath
+                        Guid.NewGuid().ToString(),
+                        chunk.FileId,
+                        chunkContent,
+                        currentStartLine,
+                        currentStartLine + currentLines.Count - 2,
+                        chunk.Language,
+                        ChunkType.Unknown,
+                        null,
+                        chunk.FilePath,
+                        null,
+                        null,
+                        default,
+                        default
                     );
                     result.Add(newChunk);
 
@@ -384,14 +395,19 @@ public class UniversalParser : IUniversalParser
         {
             var chunkContent = string.Join("\n", currentLines);
             var newChunk = new Chunk(
-                symbol: null,
-                startLine: currentStartLine,
-                endLine: chunk.EndLine,
-                code: chunkContent,
-                chunkType: ChunkType.Unknown,
-                fileId: chunk.FileId,
-                language: chunk.Language,
-                filePath: chunk.FilePath
+                Guid.NewGuid().ToString(),
+                chunk.FileId,
+                chunkContent,
+                currentStartLine,
+                chunk.EndLine,
+                chunk.Language,
+                ChunkType.Unknown,
+                null,
+                chunk.FilePath,
+                null,
+                null,
+                default,
+                default
             );
             result.Add(newChunk);
         }
