@@ -497,16 +497,21 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
             var result = new List<Chunk>();
             foreach (var row in rows)
             {
-                var chunk = new Chunk(
-                    symbol: row.GetValueOrDefault(NAME_FIELD, "") as string,
-                    startLine: Convert.ToInt32(row.GetValueOrDefault(START_LINE_FIELD, 0)),
-                    endLine: Convert.ToInt32(row.GetValueOrDefault(END_LINE_FIELD, 0)),
-                    code: row.GetValueOrDefault(CONTENT_FIELD, "") as string,
-                    chunkType: ChunkTypeExtensions.FromString(row.GetValueOrDefault(CHUNK_TYPE_FIELD, "") as string),
-                    fileId: Convert.ToInt32(row.GetValueOrDefault(FILE_ID_FIELD, 0)),
-                    language: LanguageExtensions.FromString(row.GetValueOrDefault(LANGUAGE_FIELD, "") as string),
-                    id: Convert.ToInt32(row.GetValueOrDefault(ID_FIELD, 0))
-                );
+                var dict = new Dictionary<string, object>
+                {
+                    ["id"] = row.GetValueOrDefault(ID_FIELD, 0).ToString(),
+                    ["file_id"] = row.GetValueOrDefault(FILE_ID_FIELD, 0).ToString(),
+                    ["content"] = row.GetValueOrDefault(CONTENT_FIELD, "") as string ?? "",
+                    ["start_line"] = Convert.ToInt32(row.GetValueOrDefault(START_LINE_FIELD, 0)),
+                    ["end_line"] = Convert.ToInt32(row.GetValueOrDefault(END_LINE_FIELD, 0)),
+                    ["metadata"] = new Dictionary<string, object>
+                    {
+                        ["symbol"] = row.GetValueOrDefault(NAME_FIELD, "") as string ?? "",
+                        ["chunkType"] = ChunkTypeExtensions.FromString(row.GetValueOrDefault(CHUNK_TYPE_FIELD, "") as string ?? ""),
+                        ["language"] = LanguageExtensions.FromString(row.GetValueOrDefault(LANGUAGE_FIELD, "") as string ?? "")
+                    }
+                };
+                var chunk = Chunk.FromDict(dict);
                 result.Add(chunk);
             }
 

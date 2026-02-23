@@ -49,13 +49,12 @@ public class VueChunkParser : IChunkParser
                 var endLine = startLine + templateContent.Split('\n').Length - 1;
 
                 var chunk = new Chunk(
-                    "template",
+                    Guid.NewGuid().ToString(),
+                    "0",
+                    templateContent,
                     startLine,
                     endLine,
-                    templateContent,
-                    ChunkType.Vue,
-                    0,
-                    Language.Unknown); // Template is HTML-like
+                    new Dictionary<string, object> { ["symbol"] = "template", ["chunkType"] = ChunkType.Vue, ["language"] = Language.Unknown });
                 chunks.Add(chunk);
             }
         }
@@ -71,13 +70,12 @@ public class VueChunkParser : IChunkParser
                 var endLine = startLine + scriptContent.Split('\n').Length - 1;
 
                 var chunk = new Chunk(
-                    "script",
+                    Guid.NewGuid().ToString(),
+                    "0",
+                    scriptContent,
                     startLine,
                     endLine,
-                    scriptContent,
-                    ChunkType.Vue,
-                    0,
-                    Language.JavaScript); // Assume JavaScript, could be TypeScript
+                    new Dictionary<string, object> { ["symbol"] = "script", ["chunkType"] = ChunkType.Vue, ["language"] = Language.JavaScript });
                 chunks.Add(chunk);
             }
         }
@@ -96,13 +94,12 @@ public class VueChunkParser : IChunkParser
                     var endLine = startLine + styleContent.Split('\n').Length - 1;
 
                     var chunk = new Chunk(
-                        styleNodes.Count > 1 ? $"style_{i + 1}" : "style",
+                        Guid.NewGuid().ToString(),
+                        "0",
+                        styleContent,
                         startLine,
                         endLine,
-                        styleContent,
-                        ChunkType.Vue,
-                        0,
-                        Language.Unknown); // CSS/SCSS
+                        new Dictionary<string, object> { ["symbol"] = styleNodes.Count > 1 ? $"style_{i + 1}" : "style", ["chunkType"] = ChunkType.Vue, ["language"] = Language.Unknown });
                     chunks.Add(chunk);
                 }
             }
@@ -112,13 +109,12 @@ public class VueChunkParser : IChunkParser
         if (chunks.Count == 0 && !string.IsNullOrWhiteSpace(content))
         {
             var chunk = new Chunk(
-                Path.GetFileNameWithoutExtension(filePath),
+                Guid.NewGuid().ToString(),
+                "0",
+                content,
                 1,
                 lines.Length,
-                content,
-                ChunkType.Unknown,
-                0,
-                Language.Unknown);
+                new Dictionary<string, object> { ["symbol"] = Path.GetFileNameWithoutExtension(filePath), ["chunkType"] = ChunkType.Unknown, ["language"] = Language.Unknown });
             chunks.Add(chunk);
         }
 
