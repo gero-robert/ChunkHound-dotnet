@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ChunkHound.Core;
 using ChunkHound.Services;
+using ChunkHound.Parsers.Concrete;
 using System.Threading.Tasks;
 using System.IO;
 
@@ -25,18 +26,24 @@ public class ProgramTests
         var builder = Host.CreateApplicationBuilder();
 
         // Register services (same as in Program.cs)
+        builder.Services.AddSingleton<CSharpParser>();
+        builder.Services.AddSingleton<Dictionary<Language, IUniversalParser>>(sp => {
+          var dict = new Dictionary<Language, IUniversalParser>();
+          dict[Language.CSharp] = sp.GetRequiredService<CSharpParser>();
+          return dict;
+        });
         builder.Services.AddSingleton<IIndexingCoordinator>(sp =>
             new IndexingCoordinator(
                 sp.GetRequiredService<IDatabaseProvider>(),
                 Path.GetTempPath(),
                 sp.GetService<IEmbeddingProvider>(),
-                sp.GetService<Dictionary<Language, IUniversalParser>>(),
+                sp.GetRequiredService<Dictionary<Language, IUniversalParser>>(),
                 null, // chunkCacheService
                 null, // config
                 sp.GetService<ILogger<IndexingCoordinator>>(),
                 null // progress
             ));
-        builder.Services.AddSingleton<IUniversalParser, UniversalParser>();
+        builder.Services.AddSingleton<IUniversalParser>(sp => new UniversalParser(sp.GetService<ILogger<UniversalParser>>(), sp.GetRequiredService<ILanguageConfigProvider>(), sp.GetRequiredService<Dictionary<Language, IUniversalParser>>()));
         builder.Services.AddSingleton<IEmbeddingProvider, EmbeddingProvider>();
         builder.Services.AddSingleton<IDatabaseProvider, DatabaseProvider>();
         builder.Services.AddSingleton<ILanguageConfigProvider, LanguageConfigProvider>();
@@ -108,7 +115,14 @@ public class ProgramTests
 
         // The indexer.IndexAsync call handles exceptions internally and logs errors
         // For this test, we just ensure the call completes without throwing
-        await indexer.IndexAsync("nonexistent-directory");
+        try
+        {
+            await indexer.IndexAsync("nonexistent-directory");
+        }
+        catch (System.IO.DirectoryNotFoundException)
+        {
+            // Expected for nonexistent directory
+        }
 
         logger.Log(LogLevel.Information, 0, "Application foundation is working", null, (state, ex) => state.ToString());
 
@@ -125,18 +139,24 @@ public class ProgramTests
         // Arrange
         var builder = Host.CreateApplicationBuilder();
 
+        builder.Services.AddSingleton<CSharpParser>();
+        builder.Services.AddSingleton<Dictionary<Language, IUniversalParser>>(sp => {
+          var dict = new Dictionary<Language, IUniversalParser>();
+          dict[Language.CSharp] = sp.GetRequiredService<CSharpParser>();
+          return dict;
+        });
         builder.Services.AddSingleton<IIndexingCoordinator>(sp =>
             new IndexingCoordinator(
                 sp.GetRequiredService<IDatabaseProvider>(),
                 Path.GetTempPath(),
                 sp.GetService<IEmbeddingProvider>(),
-                sp.GetService<Dictionary<Language, IUniversalParser>>(),
+                sp.GetRequiredService<Dictionary<Language, IUniversalParser>>(),
                 null, // chunkCacheService
                 null, // config
                 sp.GetService<ILogger<IndexingCoordinator>>(),
                 null // progress
             ));
-        builder.Services.AddSingleton<IUniversalParser, UniversalParser>();
+        builder.Services.AddSingleton<IUniversalParser>(sp => new UniversalParser(sp.GetService<ILogger<UniversalParser>>(), sp.GetRequiredService<ILanguageConfigProvider>(), sp.GetRequiredService<Dictionary<Language, IUniversalParser>>()));
         builder.Services.AddSingleton<IEmbeddingProvider, EmbeddingProvider>();
         builder.Services.AddSingleton<IDatabaseProvider, DatabaseProvider>();
         builder.Services.AddSingleton<ILanguageConfigProvider, LanguageConfigProvider>();

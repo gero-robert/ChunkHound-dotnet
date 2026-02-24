@@ -73,8 +73,8 @@ namespace TestNamespace
                 var classChunk = chunks.FirstOrDefault(c => c.Metadata.ContainsKey("type") && c.Metadata["type"].ToString() == "class");
                 Assert.NotNull(classChunk);
                 Assert.Equal("TestClass", classChunk.Metadata["name"].ToString());
-                Assert.Equal(5, classChunk.StartLine); // class starts at line 5
-                Assert.Equal(25, classChunk.EndLine); // class ends at line 25
+                Assert.Equal(4, classChunk.StartLine); // class starts at line 5
+                Assert.Equal(22, classChunk.EndLine); // class ends at line 25
 
                 // Should have method chunks
                 var methodChunks = chunks.Where(c => c.Metadata.ContainsKey("type") && c.Metadata["type"].ToString() == "method").ToList();

@@ -117,7 +117,13 @@ namespace ChunkHound.Core.Tests.Services
         public async Task IndexAsync_CallsProcessDirectoryAsync()
         {
             // Arrange
-            var coordinator = CreateCoordinator();
+            _embeddingProviderMock.Setup(e => e.ProviderName).Returns("test");
+            _embeddingProviderMock.Setup(e => e.ModelName).Returns("model");
+            _embeddingProviderMock.Setup(e => e.GetMaxTokensPerBatch()).Returns(1000);
+            _embeddingProviderMock.Setup(e => e.GetMaxDocumentsPerBatch()).Returns(10);
+            _embeddingProviderMock.Setup(e => e.GetRecommendedConcurrency()).Returns(8);
+
+            var coordinator = CreateCoordinator(embeddingProvider: _embeddingProviderMock.Object);
             var testDir = Path.Combine(_baseDirectory, "test");
             Directory.CreateDirectory(testDir);
 
@@ -222,12 +228,20 @@ namespace ChunkHound.Core.Tests.Services
             _databaseProviderMock.Setup(d => d.InsertChunksBatchAsync(It.IsAny<List<Chunk>>(), It.IsAny<CancellationToken>()))
                                 .Returns((List<Chunk> chunks, CancellationToken ct) => Task.FromResult(new List<int>(Enumerable.Range(1, chunks.Count))));
 
+            _embeddingProviderMock.Setup(e => e.ProviderName).Returns("test");
+            _embeddingProviderMock.Setup(e => e.ModelName).Returns("model");
+            _embeddingProviderMock.Setup(e => e.GetMaxTokensPerBatch()).Returns(1000);
+            _embeddingProviderMock.Setup(e => e.GetMaxDocumentsPerBatch()).Returns(10);
+            _embeddingProviderMock.Setup(e => e.GetRecommendedConcurrency()).Returns(8);
+            _embeddingProviderMock.Setup(e => e.EmbedAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+                                  .ReturnsAsync((List<string> texts, CancellationToken ct) => texts.Select(t => new List<float> { 0.1f, 0.2f }).ToList());
+
             var coordinator = CreateCoordinator(
                 parsers: new Dictionary<Language, IUniversalParser>
                 {
                     [Language.CSharp] = mockParser.Object
                 },
-                embeddingProvider: null);
+                embeddingProvider: _embeddingProviderMock.Object);
 
             // Act
             var result = await coordinator.ProcessDirectoryAsync(testDir);
@@ -265,7 +279,13 @@ namespace ChunkHound.Core.Tests.Services
             _databaseProviderMock.Setup(d => d.GetFileByPathAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                                 .ReturnsAsync(existingFile);
 
-            var coordinator = CreateCoordinator();
+            _embeddingProviderMock.Setup(e => e.ProviderName).Returns("test");
+            _embeddingProviderMock.Setup(e => e.ModelName).Returns("model");
+            _embeddingProviderMock.Setup(e => e.GetMaxTokensPerBatch()).Returns(1000);
+            _embeddingProviderMock.Setup(e => e.GetMaxDocumentsPerBatch()).Returns(10);
+            _embeddingProviderMock.Setup(e => e.GetRecommendedConcurrency()).Returns(8);
+
+            var coordinator = CreateCoordinator(embeddingProvider: _embeddingProviderMock.Object);
 
             // Act
             var result = await coordinator.ProcessDirectoryAsync(testDir);
@@ -302,12 +322,20 @@ namespace ChunkHound.Core.Tests.Services
             _databaseProviderMock.Setup(d => d.InsertChunksBatchAsync(It.IsAny<List<Chunk>>(), It.IsAny<CancellationToken>()))
                                 .Returns((List<Chunk> chunks, CancellationToken ct) => Task.FromResult(new List<int>(Enumerable.Range(1, chunks.Count))));
 
+            _embeddingProviderMock.Setup(e => e.ProviderName).Returns("test");
+            _embeddingProviderMock.Setup(e => e.ModelName).Returns("model");
+            _embeddingProviderMock.Setup(e => e.GetMaxTokensPerBatch()).Returns(1000);
+            _embeddingProviderMock.Setup(e => e.GetMaxDocumentsPerBatch()).Returns(10);
+            _embeddingProviderMock.Setup(e => e.GetRecommendedConcurrency()).Returns(8);
+            _embeddingProviderMock.Setup(e => e.EmbedAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+                                  .ReturnsAsync((List<string> texts, CancellationToken ct) => texts.Select(t => new List<float> { 0.1f, 0.2f }).ToList());
+
             var coordinator = CreateCoordinator(
                 parsers: new Dictionary<Language, IUniversalParser>
                 {
                     [Language.CSharp] = mockParser.Object
                 },
-                embeddingProvider: null);
+                embeddingProvider: _embeddingProviderMock.Object);
 
             // Act
             var result = await coordinator.ProcessDirectoryAsync(testDir, patterns: new List<string> { "*.cs" });

@@ -55,7 +55,7 @@ namespace ChunkHound.Core.Tests.Services
                 x => x.Log(
                     LogLevel.Information,
                     It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((o, t) => o != null && o.ToString().Contains("Embedding 3 texts")),
+                    It.Is<It.IsAnyType>((o, t) => o != null && o!.ToString()!.Contains("Embedding 3 texts")),
                     It.IsAny<Exception>(),
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);

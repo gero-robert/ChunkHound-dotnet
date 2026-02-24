@@ -31,7 +31,7 @@ namespace ChunkHound.Core.Tests.Services
                 x => x.Log(
                     LogLevel.Information,
                     It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((o, t) => o != null && o.ToString().Contains("Initializing database")),
+                    It.Is<It.IsAnyType>((o, t) => o != null && o!.ToString()!.Contains("Initializing database")),
                     It.IsAny<Exception>(),
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);
@@ -58,7 +58,7 @@ namespace ChunkHound.Core.Tests.Services
                 x => x.Log(
                     LogLevel.Information,
                     It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((o, t) => o != null && o.ToString().Contains("Storing 3 chunks")),
+                    It.Is<It.IsAnyType>((o, t) => o != null && o!.ToString()!.Contains("Storing 3 chunks")),
                     It.IsAny<Exception>(),
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);
@@ -79,7 +79,7 @@ namespace ChunkHound.Core.Tests.Services
                 x => x.Log(
                     LogLevel.Information,
                     It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((o, t) => o != null && o.ToString().Contains("Retrieving chunks for 2 hashes")),
+                    It.Is<It.IsAnyType>((o, t) => o != null && o!.ToString()!.Contains("Retrieving chunks for 2 hashes")),
                     It.IsAny<Exception>(),
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);
@@ -153,7 +153,7 @@ namespace ChunkHound.Core.Tests.Services
                 x => x.Log(
                     LogLevel.Information,
                     It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((o, t) => o != null && o.ToString().Contains("Inserting batch of 1 embedding data")),
+                    It.Is<It.IsAnyType>((o, t) => o != null && o!.ToString()!.Contains("Inserting batch of 1 embedding data")),
                     It.IsAny<Exception>(),
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);

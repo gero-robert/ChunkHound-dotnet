@@ -58,3 +58,4 @@ coverage/
 python-deps/benchmark_results.json
 
 test-results/
+ChunkHound.Tests/TestResults/
