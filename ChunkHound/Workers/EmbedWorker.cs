@@ -32,12 +32,13 @@ public class EmbedWorker : PipelineWorker<Chunk, Chunk>
     /// </summary>
     protected override async Task<IReadOnlyList<Chunk>> ProcessBatchAsync(IReadOnlyList<Chunk> batch, CancellationToken ct)
     {
+        var contents = batch.Select(c => c.Content).ToList();
+        var embeddings = await _embeddingProvider.EmbedAsync(contents, ct);
         var result = new List<Chunk>();
-        foreach (var chunk in batch)
+        for (int i = 0; i < batch.Count; i++)
         {
-            var emb = await _embeddingProvider.GetEmbeddingAsync(chunk.Content, ct);
-            var memory = new ReadOnlyMemory<float>(emb.ToArray());
-            var updated = chunk.WithEmbedding(memory);
+            var memory = new ReadOnlyMemory<float>(embeddings[i].ToArray());
+            var updated = batch[i].WithEmbedding(memory);
             result.Add(updated);
         }
         return result;

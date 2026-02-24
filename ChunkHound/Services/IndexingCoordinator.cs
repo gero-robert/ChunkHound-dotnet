@@ -35,7 +35,8 @@ public class IndexingCoordinator : IIndexingCoordinator
     // Channels for pipeline
     private readonly Channel<FileProcessingResult> _fileResultsChannel;
     private readonly Channel<Chunk> _chunksChannel;
-    private readonly Channel<Chunk> _embeddedChunksChannel;
+    private readonly Channel<Chunk> _embedChunksChannel;
+    private readonly Channel<string> _filesChannel;
 
     // Synchronization primitives
     private readonly ReaderWriterLockSlim _dbLock;
@@ -83,7 +84,8 @@ public class IndexingCoordinator : IIndexingCoordinator
         // Initialize channels
         _fileResultsChannel = Channel.CreateUnbounded<FileProcessingResult>();
         _chunksChannel = Channel.CreateUnbounded<Chunk>();
-        _embeddedChunksChannel = Channel.CreateUnbounded<Chunk>();
+        _embedChunksChannel = Channel.CreateUnbounded<Chunk>();
+        _filesChannel = Channel.CreateUnbounded<string>();
 
         // Initialize synchronization primitives
         _dbLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
@@ -230,9 +232,9 @@ public class IndexingCoordinator : IIndexingCoordinator
 
         // Run workers
         var parseTask = parseWorker.RunAsync(_fileResultsChannel.Reader, _chunksChannel.Writer, cancellationToken);
-        var embedTask = embedWorker.RunAsync(_chunksChannel.Reader, _embeddedChunksChannel.Writer, cancellationToken);
+        var embedTask = embedWorker.RunAsync(_chunksChannel.Reader, _embedChunksChannel.Writer, cancellationToken);
         var dummyChannel = Channel.CreateUnbounded<object>();
-        var storeTask = storeWorker.RunAsync(_embeddedChunksChannel.Reader, dummyChannel.Writer, cancellationToken);
+        var storeTask = storeWorker.RunAsync(_embedChunksChannel.Reader, dummyChannel.Writer, cancellationToken);
 
         // Producer
         foreach (var file in files)
@@ -311,12 +313,8 @@ public class IndexingCoordinator : IIndexingCoordinator
 
                         for (var i = 0; i < batch.Count; i++)
                         {
-                            var embedChunk = new EmbedChunk(
-                                batch[i],
-                                embeddings[i],
-                                _embeddingProvider.ProviderName,
-                                _embeddingProvider.ModelName);
-                            await _embedChunksChannel.Writer.WriteAsync(embedChunk, cancellationToken);
+                            var chunk = batch[i] with { Embedding = new ReadOnlyMemory<float>(embeddings[i].ToArray()) };
+                            await _embedChunksChannel.Writer.WriteAsync(chunk, cancellationToken);
                         }
                     }
                     catch (Exception ex)
@@ -406,13 +404,13 @@ public class IndexingCoordinator : IIndexingCoordinator
             else
             {
                 // Read embed chunks
-                var batch = new List<EmbedChunk>();
+                var batch = new List<Chunk>();
                 while (await _embedChunksChannel.Reader.WaitToReadAsync(cancellationToken))
                 {
                     // Collect available embed chunks up to batch size
-                    while (batch.Count < batchSize && _embedChunksChannel.Reader.TryRead(out var embedChunk))
+                    while (batch.Count < batchSize && _embedChunksChannel.Reader.TryRead(out var chunk))
                     {
-                        batch.Add(embedChunk);
+                        batch.Add(chunk);
                     }
 
                     if (batch.Count != 0)
@@ -421,8 +419,8 @@ public class IndexingCoordinator : IIndexingCoordinator
                         {
                             await ExecuteWithLockAsync(async () =>
                             {
-                                var chunks = batch.Select(ec => ec.Chunk).ToList();
-                                var embeddings = batch.Select(ec => ec.Embedding).ToList();
+                                var chunks = batch.ToList();
+                                var embeddings = batch.Select(c => c.Embedding.Value.ToArray().ToList()).ToList();
 
                                 var chunkIds = await _databaseProvider.InsertChunksBatchAsync(chunks, cancellationToken);
 
@@ -453,8 +451,8 @@ public class IndexingCoordinator : IIndexingCoordinator
                     {
                         await ExecuteWithLockAsync(async () =>
                         {
-                            var chunks = batch.Select(ec => ec.Chunk).ToList();
-                            var embeddings = batch.Select(ec => ec.Embedding).ToList();
+                            var chunks = batch.ToList();
+                            var embeddings = batch.Select(c => c.Embedding.Value.ToArray().ToList()).ToList();
 
                             var chunkIds = await _databaseProvider.InsertChunksBatchAsync(chunks, cancellationToken);
 
@@ -469,7 +467,7 @@ public class IndexingCoordinator : IIndexingCoordinator
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Store worker failed for remaining batch of {Count} embed chunks", batch.Count);
+                        _logger.LogError(ex, "Store worker failed for remaining batch of {Count} chunks", batch.Count);
                     }
                 }
             }

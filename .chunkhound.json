@@ -30,11 +30,11 @@
     "missing_embeddings_fast_threshold": 5.0
   },
   "llm": {
-    "provider": "openai",
+    "provider": "grok",
     "utility_provider": null,
     "synthesis_provider": null,
-    "utility_model": "",
-    "synthesis_model": "",
+    "utility_model": "grok-4-1-fast-reasoning",
+    "synthesis_model": "grok-4-1-fast-reasoning",
     "codex_reasoning_effort": null,
     "codex_reasoning_effort_utility": null,
     "codex_reasoning_effort_synthesis": null,
@@ -47,13 +47,13 @@
     "anthropic_clear_tool_uses_trigger_tokens": null,
     "anthropic_clear_tool_uses_keep": null,
     "api_key": null,
-    "base_url": null,
+    "base_url": "https://api.x.ai/v1",
     "timeout": 60,
     "max_retries": 3
   },
   "mcp": {
     "transport": "stdio",
-    "host": "0.0.0.0",
+    "host": "127.0.0.1",
     "port": 3000,
     "cors": true,
     "allowed_origins": ["*"],

@@ -18,9 +18,9 @@ namespace ChunkHound.Tests.Workers;
 /// </summary>
 public class WorkerIntegrationTests : IDisposable
 {
-    private readonly Channel<string> _filesChannel;
+    private readonly Channel<FileProcessingResult> _filesChannel;
     private readonly Channel<Chunk> _chunksChannel;
-    private readonly Channel<EmbedChunk> _embedChunksChannel;
+    private readonly Channel<Chunk> _embedChunksChannel;
     private readonly ReaderWriterLockSlim _dbLock;
     private readonly Mock<ILogger<ParseWorker>> _parseLogger;
     private readonly Mock<ILogger<EmbedWorker>> _embedLogger;
@@ -30,9 +30,9 @@ public class WorkerIntegrationTests : IDisposable
 
     public WorkerIntegrationTests()
     {
-        _filesChannel = Channel.CreateUnbounded<string>();
+        _filesChannel = Channel.CreateUnbounded<FileProcessingResult>();
         _chunksChannel = Channel.CreateUnbounded<Chunk>();
-        _embedChunksChannel = Channel.CreateUnbounded<EmbedChunk>();
+        _embedChunksChannel = Channel.CreateUnbounded<Chunk>();
         _dbLock = new ReaderWriterLockSlim();
         _parseLogger = new Mock<ILogger<ParseWorker>>();
         _embedLogger = new Mock<ILogger<EmbedWorker>>();
@@ -55,6 +55,9 @@ public class WorkerIntegrationTests : IDisposable
 
         // Setup parser
         var parsers = new Dictionary<Language, IUniversalParser>();
+        var mockParser = new Mock<IUniversalParser>();
+        mockParser.Setup(p => p.ParseAsync(It.IsAny<ChunkHound.Core.File>())).ReturnsAsync(new List<Chunk> { new Chunk("test", 1, 1, "content", ChunkType.Function, 1, Language.CSharp) });
+        parsers[Language.CSharp] = mockParser.Object;
         var parser = new UniversalParser(_parserLogger.Object, languageConfig, parsers);
 
         // Setup embedding provider
@@ -64,24 +67,26 @@ public class WorkerIntegrationTests : IDisposable
         var dbProvider = new DatabaseProvider(_dbLogger.Object);
 
         // Setup workers
-        var parseWorker = new ParseWorker(_filesChannel, _chunksChannel, parser, logger: _parseLogger.Object);
+        var parseWorker = new ParseWorker(parsers, _parseLogger.Object, null);
         var embedConfig = new WorkerConfig { BatchSize = 10 };
-        var embedWorker = new EmbedWorker(embedProvider, _chunksChannel, _embedChunksChannel, logger: _embedLogger.Object, config: embedConfig);
+        var embedWorker = new EmbedWorker(embedProvider, _embedLogger.Object, embedConfig);
         var storeConfig = new WorkerConfig { BatchSize = 20 };
-        var storeWorker = new StoreWorker(dbProvider, _embedChunksChannel, _dbLock, logger: _storeLogger.Object, config: storeConfig);
+        var storeWorker = new StoreWorker(dbProvider, _storeLogger.Object, storeConfig);
 
         // Enqueue files
         foreach (var file in testFiles)
         {
             await _filesChannel.Writer.WriteAsync(file);
         }
+        _filesChannel.Writer.Complete();
 
         // Act
         var cts = new CancellationTokenSource(30000); // 30 second timeout
 
-        var parseTask = Task.Run(() => parseWorker.RunAsync(cts.Token));
-        var embedTask = Task.Run(() => embedWorker.StartAsync(cts.Token));
-        var storeTask = Task.Run(() => storeWorker.StartAsync(cts.Token));
+        var parseTask = parseWorker.RunAsync(_filesChannel.Reader, _chunksChannel.Writer, cts.Token);
+        var embedTask = embedWorker.RunAsync(_chunksChannel.Reader, _embedChunksChannel.Writer, cts.Token);
+        var dummyChannel = Channel.CreateUnbounded<object>();
+        var storeTask = storeWorker.RunAsync(_embedChunksChannel.Reader, dummyChannel.Writer, cts.Token);
 
         // Let workers process for a bit
         await Task.Delay(5000, cts.Token);
@@ -120,20 +125,25 @@ namespace TestNamespace
         }
     }
 }";
-        var validFile = CreateTestFile("valid.cs", validContent);
-        var invalidFile = "nonexistent.cs"; // This will cause an error
+        var validFilePath = CreateTestFile("valid.cs", validContent);
+        var validFile = new FileProcessingResult { File = new ChunkHound.Core.File(validFilePath, 0, Language.CSharp, 0), Status = FileProcessingStatus.Success };
+        var invalidFile = new FileProcessingResult { File = new ChunkHound.Core.File("nonexistent.cs", 0, Language.CSharp, 0), Status = FileProcessingStatus.Success };
 
         await _filesChannel.Writer.WriteAsync(validFile);
         await _filesChannel.Writer.WriteAsync(invalidFile);
+        _filesChannel.Writer.Complete();
 
         var languageConfig = new LanguageConfigProvider();
         var parsers = new Dictionary<Language, IUniversalParser>();
+        var mockParser = new Mock<IUniversalParser>();
+        mockParser.Setup(p => p.ParseAsync(It.IsAny<ChunkHound.Core.File>())).ReturnsAsync(new List<Chunk> { new Chunk("test", 1, 1, "content", ChunkType.Function, 1, Language.CSharp) });
+        parsers[Language.CSharp] = mockParser.Object;
         var parser = new UniversalParser(_parserLogger.Object, languageConfig, parsers);
-        var parseWorker = new ParseWorker(_filesChannel, _chunksChannel, parser, logger: _parseLogger.Object);
+        var parseWorker = new ParseWorker(parsers, _parseLogger.Object, null);
 
         // Act
         var cts = new CancellationTokenSource(5000);
-        await parseWorker.RunAsync(cts.Token);
+        await parseWorker.RunAsync(_filesChannel.Reader, _chunksChannel.Writer, cts.Token);
 
         // Assert
         // Should have processed the valid file despite the error on invalid file
@@ -159,7 +169,7 @@ namespace TestNamespace
                 texts.Select(_ => new List<float> { 0.1f, 0.2f, 0.3f }).ToList());
 
         var embedConfig = new WorkerConfig { BatchSize = 5 };
-        var embedWorker = new EmbedWorker(embedProviderMock.Object, _chunksChannel, _embedChunksChannel, logger: _embedLogger.Object, config: embedConfig);
+        var embedWorker = new EmbedWorker(embedProviderMock.Object, _embedLogger.Object, embedConfig);
 
         // Add more chunks than batch size
         for (int i = 0; i < 12; i++)
@@ -167,10 +177,11 @@ namespace TestNamespace
             var chunk = new Chunk($"Symbol{i}", 1, 5, $"code {i}", ChunkType.Function, 1, Language.CSharp);
             await _chunksChannel.Writer.WriteAsync(chunk);
         }
+        _chunksChannel.Writer.Complete();
 
         // Act
         var cts = new CancellationTokenSource(2000);
-        await embedWorker.StartAsync(cts.Token);
+        await embedWorker.RunAsync(_chunksChannel.Reader, _embedChunksChannel.Writer, cts.Token);
 
         // Assert
         // Verify that EmbedAsync was called with batches of size <= 5
@@ -182,17 +193,23 @@ namespace TestNamespace
         Assert.Equal(12, count);
     }
 
-    private List<string> GenerateTestFiles(int count)
+    private List<FileProcessingResult> GenerateTestFiles(int count)
     {
-        var files = new List<string>();
+        var files = new List<FileProcessingResult>();
         var languages = new[] { "cs", "py", "js" };
 
         for (int i = 0; i < count; i++)
         {
             var lang = languages[i % languages.Length];
             var fileName = $"test_{i}.{lang}";
-            var filePath = CreateTestFile(fileName, GenerateCodeSnippet(lang));
-            files.Add(filePath);
+            var content = GenerateCodeSnippet(lang);
+            var filePath = CreateTestFile(fileName, content);
+            var language = lang == "cs" ? Language.CSharp : lang == "py" ? Language.Python : Language.JavaScript;
+            var mtime = System.IO.File.GetLastWriteTimeUtc(filePath);
+            var size = new System.IO.FileInfo(filePath).Length;
+            var file = new ChunkHound.Core.File(filePath, new DateTimeOffset(mtime).ToUnixTimeSeconds(), language, size);
+            var result = new FileProcessingResult { File = file, Status = FileProcessingStatus.Success };
+            files.Add(result);
         }
 
         return files;
