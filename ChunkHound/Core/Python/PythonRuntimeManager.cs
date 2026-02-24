@@ -32,9 +32,9 @@ namespace ChunkHound.Core.Python
         {
             lock (_lock)
             {
-                string pythonHome = null;
-                string pythonPath = null;
-                string dllName = null;
+                string? pythonHome = null;
+                string? pythonPath = null;
+                string? dllName = null;
 
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {

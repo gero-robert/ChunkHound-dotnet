@@ -48,10 +48,10 @@ public class RapidYamlParser : IChunkParser
 
             // Basic validation that it's valid YAML
             var deserializer = new DeserializerBuilder().Build();
-            var yamlObject = deserializer.Deserialize<object>(templateSanitizedContent);
+            var yamlObject = deserializer.Deserialize<object>(templateSanitizedContent!);
 
             // Sanitize the content (remove comments, etc.)
-            var sanitizedContent = SanitizeYamlContent(templateSanitizedContent);
+            var sanitizedContent = SanitizeYamlContent(templateSanitizedContent!);
 
             var chunk = new Chunk(
                 Path.GetFileNameWithoutExtension(filePath),

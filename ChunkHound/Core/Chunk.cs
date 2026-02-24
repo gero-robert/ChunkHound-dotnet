@@ -178,10 +178,17 @@ public sealed record Chunk
         var metaObj = dict.GetValueOrDefault(MetadataField);
         var meta = metaObj as Dictionary<string, object> ?? new();
         ReadOnlyMemory<float>? emb = null;
-        if (dict.TryGetValue(EmbeddingField, out var eObj) && eObj is IEnumerable<object> floats)
+        if (dict.TryGetValue(EmbeddingField, out var eObj))
         {
-            var arr = floats.Select(f => (float)Convert.ToDouble(f)).ToArray();
-            emb = new ReadOnlyMemory<float>(arr);
+            if (eObj is IEnumerable<object> floats)
+            {
+                var arr = floats.Select(f => (float)Convert.ToDouble(f)).ToArray();
+                emb = new ReadOnlyMemory<float>(arr);
+            }
+            else if (eObj is float[] floatArr)
+            {
+                emb = new ReadOnlyMemory<float>(floatArr);
+            }
         }
         DateTimeOffset ca = DateTimeOffset.TryParse(dict.GetValueOrDefault(CreatedAtField)?.ToString(), out var c) ? c : DateTimeOffset.UtcNow;
         DateTimeOffset ua = DateTimeOffset.TryParse(dict.GetValueOrDefault(UpdatedAtField)?.ToString(), out var u) ? u : DateTimeOffset.UtcNow;
@@ -204,7 +211,9 @@ public sealed record Chunk
         [StartLineField] = StartLine,
         [EndLineField] = EndLine,
         [MetadataField] = Metadata.ToDictionary(k => k.Key, v => v.Value),
+#pragma warning disable CS8601 // Possible null reference assignment - false positive
         [EmbeddingField] = Embedding?.ToArray(),
+#pragma warning restore CS8601
         [CreatedAtField] = CreatedAt.ToString("O"),
         [UpdatedAtField] = UpdatedAt.ToString("O")
     };

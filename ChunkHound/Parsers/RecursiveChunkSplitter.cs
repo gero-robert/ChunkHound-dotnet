@@ -92,7 +92,7 @@ namespace ChunkHound.Parsers
         /// <param name="maxChunkSize">Maximum chunk size in non-whitespace characters.</param>
         /// <param name="overlap">Overlap between chunks (not implemented yet).</param>
         /// <returns>List of chunks that fit within size limits.</returns>
-        public IReadOnlyList<Chunk> Split(IReadOnlyList<Chunk> initialChunks, int maxChunkSize, int overlap)
+        public IReadOnlyList<Chunk> Split(IReadOnlyList<Chunk>? initialChunks, int maxChunkSize, int overlap)
         {
             if (initialChunks == null)
                 return new List<Chunk>();

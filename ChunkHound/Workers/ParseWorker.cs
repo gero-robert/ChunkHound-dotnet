@@ -35,7 +35,7 @@ public class ParseWorker : PipelineWorker<FileProcessingResult, Chunk>
         var allChunks = new List<Chunk>();
         foreach (var result in batch)
         {
-            if (_parsers.TryGetValue(result.File.Language, out var parser))
+            if (result.File != null && _parsers.TryGetValue(result.File.Language, out var parser))
             {
                 var chunks = await parser.ParseAsync(result.File);
                 allChunks.AddRange(chunks);

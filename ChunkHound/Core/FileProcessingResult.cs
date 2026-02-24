@@ -51,6 +51,6 @@ namespace ChunkHound.Core
         /// <summary>
         /// The file being processed.
         /// </summary>
-        public File File { get; init; }
+        public File? File { get; init; }
     }
 }

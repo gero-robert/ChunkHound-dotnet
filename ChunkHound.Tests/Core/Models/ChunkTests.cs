@@ -18,16 +18,6 @@ namespace ChunkHound.Core.Tests.Models
         }
 
         /// <summary>
-        /// Tests that the Chunk constructor throws ArgumentNullException for null fileId.
-        /// </summary>
-        [Fact]
-        public void Constructor_NullFileId_ThrowsArgumentNullException()
-        {
-            Assert.Throws<ArgumentNullException>(() =>
-                new Chunk("id1", 0, "content", 1, 1));
-        }
-
-        /// <summary>
         /// Tests that the Chunk constructor throws ArgumentNullException for null content.
         /// </summary>
         [Fact]

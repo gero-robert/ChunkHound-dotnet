@@ -68,7 +68,7 @@ public class IndexingCoordinator : IIndexingCoordinator
         IndexingConfig? config = null,
         ILogger<IndexingCoordinator>? logger = null,
         IProgress<IndexingProgress>? progress = null,
-        IOptions<IndexingOptions> options = null)
+        IOptions<IndexingOptions>? options = null)
     {
         _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
         _baseDirectory = baseDirectory ?? throw new ArgumentNullException(nameof(baseDirectory));
@@ -227,7 +227,7 @@ public class IndexingCoordinator : IIndexingCoordinator
     {
         // Create workers
         var parseWorker = new ParseWorker(_languageParsers, null);
-        var embedWorker = new EmbedWorker(_embeddingProvider, null);
+        var embedWorker = new EmbedWorker(_embeddingProvider!, null);
         var storeWorker = new StoreWorker(_databaseProvider, null);
 
         // Run workers
@@ -420,7 +420,7 @@ public class IndexingCoordinator : IIndexingCoordinator
                             await ExecuteWithLockAsync(async () =>
                             {
                                 var chunks = batch.ToList();
-                                var embeddings = batch.Select(c => c.Embedding.Value.ToArray().ToList()).ToList();
+                                var embeddings = batch.Select(c => c.Embedding!.Value.ToArray().ToList()).ToList();
 
                                 var chunkIds = await _databaseProvider.InsertChunksBatchAsync(chunks, cancellationToken);
 
@@ -452,7 +452,7 @@ public class IndexingCoordinator : IIndexingCoordinator
                         await ExecuteWithLockAsync(async () =>
                         {
                             var chunks = batch.ToList();
-                            var embeddings = batch.Select(c => c.Embedding.Value.ToArray().ToList()).ToList();
+                            var embeddings = batch.Select(c => c.Embedding!.Value.ToArray().ToList()).ToList();
 
                             var chunkIds = await _databaseProvider.InsertChunksBatchAsync(chunks, cancellationToken);
 

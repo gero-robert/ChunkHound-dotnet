@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ChunkHound.Core.Workers;
 
-public abstract class PipelineWorker<TIn, TOut> where TIn : class where TOut : class
+public abstract class PipelineWorker<TIn, TOut> where TIn : class
 {
     protected readonly ILogger Log;
     protected readonly int BatchSize;

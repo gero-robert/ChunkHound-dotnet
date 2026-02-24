@@ -202,12 +202,12 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
                 var chunk = new Chunk(
                     id: Convert.ToInt32(row.GetValueOrDefault(ID_FIELD, 0)).ToString(),
                     fileId: Convert.ToInt32(row.GetValueOrDefault(FILE_ID_FIELD, 0)),
-                    content: row.GetValueOrDefault(CONTENT_FIELD, "") as string,
+                    content: (row.GetValueOrDefault(CONTENT_FIELD, "") as string) ?? "",
                     startLine: Convert.ToInt32(row.GetValueOrDefault(START_LINE_FIELD, 0)),
                     endLine: Convert.ToInt32(row.GetValueOrDefault(END_LINE_FIELD, 0)),
-                    language: LanguageExtensions.FromString(row.GetValueOrDefault(LANGUAGE_FIELD, "") as string),
-                    chunkType: ChunkTypeExtensions.FromString(row.GetValueOrDefault(CHUNK_TYPE_FIELD, "") as string),
-                    symbol: row.GetValueOrDefault(NAME_FIELD, "") as string
+                    language: LanguageExtensions.FromString((row.GetValueOrDefault(LANGUAGE_FIELD, "") as string) ?? ""),
+                    chunkType: ChunkTypeExtensions.FromString((row.GetValueOrDefault(CHUNK_TYPE_FIELD, "") as string) ?? ""),
+                    symbol: (row.GetValueOrDefault(NAME_FIELD, "") as string) ?? ""
                 );
                 result.Add(chunk);
             }
@@ -532,8 +532,8 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
             {
                 var dict = new Dictionary<string, object>
                 {
-                    ["id"] = row.GetValueOrDefault(ID_FIELD, 0).ToString(),
-                    ["file_id"] = row.GetValueOrDefault(FILE_ID_FIELD, 0).ToString(),
+                    ["id"] = (row.GetValueOrDefault(ID_FIELD, 0) as int? ?? 0).ToString(),
+                    ["file_id"] = (row.GetValueOrDefault(FILE_ID_FIELD, 0) as int? ?? 0).ToString(),
                     ["content"] = row.GetValueOrDefault(CONTENT_FIELD, "") as string ?? "",
                     ["start_line"] = Convert.ToInt32(row.GetValueOrDefault(START_LINE_FIELD, 0)),
                     ["end_line"] = Convert.ToInt32(row.GetValueOrDefault(END_LINE_FIELD, 0)),

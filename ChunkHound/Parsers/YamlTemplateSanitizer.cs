@@ -35,7 +35,7 @@ public static class YamlTemplateSanitizer
     /// </summary>
     /// <param name="content">The YAML content to sanitize.</param>
     /// <returns>The sanitized content with templates replaced by placeholders.</returns>
-    public static string Sanitize(string content)
+    public static string? Sanitize(string? content)
     {
         if (string.IsNullOrEmpty(content))
             return content;

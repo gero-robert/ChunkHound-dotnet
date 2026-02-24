@@ -94,13 +94,13 @@ public class LanceDbService : IDisposable
     {
         try
         {
-            return _db.open_table(tableName);
+            return _db!.open_table(tableName);
         }
         catch
         {
             // Table doesn't exist, will be created when needed
             _logger?.LogDebug("Table {TableName} does not exist, will be created on first use", tableName);
-            return null;
+            return null!;
         }
     }
 
@@ -129,7 +129,7 @@ public class LanceDbService : IDisposable
                     pyVector.Append(new PyFloat(v));
 
                 // Build search query
-                dynamic query = _chunksTable.search(pyVector).limit(limit);
+                dynamic query = _chunksTable!.search(pyVector).limit(limit);
 
                 if (!string.IsNullOrEmpty(filter))
                     query = query.where(filter);
@@ -159,9 +159,11 @@ public class LanceDbService : IDisposable
                 _logger?.LogError(ex, "Search Thread={ThreadId}: Vector search failed", threadId);
                 throw;
             }
-            _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
+            finally
+            {
+                _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
+            }
         }
-        _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
     }
 
     /// <summary>
@@ -184,7 +186,7 @@ public class LanceDbService : IDisposable
             using (Py.GIL())
             {
                 _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
-                dynamic table = tableName == "chunks" ? _chunksTable : _filesTable;
+                dynamic table = tableName == "chunks" ? _chunksTable! : _filesTable!;
 
                 if (table == null)
                 {
@@ -248,7 +250,7 @@ public class LanceDbService : IDisposable
 
         var pyList = new PyList();
         pyList.Append(pyDict);
-        return _db.create_table(tableName, pyList);
+        return _db!.create_table(tableName, pyList);
     }
 
     /// <summary>
@@ -271,7 +273,7 @@ public class LanceDbService : IDisposable
             var dict = new Dictionary<string, object>();
             foreach (var key in pyDict.Keys())
             {
-                var keyStr = key.ToString();
+                var keyStr = key.ToString()!;
                 dict[keyStr] = ConvertPythonValue(pyDict[keyStr]);
             }
             return dict;
@@ -309,7 +311,7 @@ public class LanceDbService : IDisposable
             _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
             try
             {
-                dynamic table = tableName == "chunks" ? _chunksTable : _filesTable;
+                dynamic table = tableName == "chunks" ? _chunksTable! : _filesTable!;
                 if (table == null)
                     return new List<Dictionary<string, object>>();
 
@@ -471,7 +473,7 @@ public class LanceDbService : IDisposable
             _logger?.LogDebug("GIL acquired successfully on thread {ThreadId}", threadId);
             try
             {
-                dynamic table = tableName == "chunks" ? _chunksTable : _filesTable;
+                dynamic table = tableName == "chunks" ? _chunksTable! : _filesTable!;
                 if (table == null)
                     return new Dictionary<string, object>();
 
@@ -493,9 +495,11 @@ public class LanceDbService : IDisposable
                 _logger?.LogError(ex, "GetTableStats table={TableName} Thread={ThreadId}: Failed to get table stats", tableName, threadId);
                 return new Dictionary<string, object>();
             }
-            _logger?.LogDebug("Releasing Python GIL on thread {ThreadId}", threadId);
+            finally
+            {
+                _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
+            }
         }
-        _logger?.LogDebug("GIL released on thread {ThreadId}", threadId);
     }
 
     /// <summary>
@@ -520,8 +524,8 @@ public class LanceDbService : IDisposable
                 // Delete all data from existing tables instead of dropping
                 try
                 {
-                    var chunksTable = _db.open_table("chunks");
-                    chunksTable.delete("id >= 0");
+                    var chunksTable = _db!.open_table("chunks");
+                    chunksTable!.delete("id >= 0");
                     _logger?.LogDebug("ClearAllData: Thread {ThreadId}: Deleted all data from chunks table", threadId);
                 }
                 catch
@@ -531,8 +535,8 @@ public class LanceDbService : IDisposable
 
                 try
                 {
-                    var filesTable = _db.open_table("files");
-                    filesTable.delete("id >= 0");
+                    var filesTable = _db!.open_table("files");
+                    filesTable!.delete("id >= 0");
                     _logger?.LogDebug("ClearAllData: Thread {ThreadId}: Deleted all data from files table", threadId);
                 }
                 catch
@@ -589,8 +593,8 @@ public class LanceDbService : IDisposable
 
         // Clear references
         _db = null;
-        _chunksTable = null;
-        _filesTable = null;
+        _chunksTable = null!;
+        _filesTable = null!;
 
         if (PythonEngine.IsInitialized)
         {

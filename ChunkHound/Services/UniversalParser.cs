@@ -18,8 +18,8 @@ public class UniversalParser : IUniversalParser
     private readonly ILogger<UniversalParser> _logger;
     private readonly ILanguageConfigProvider _config;
     private readonly Dictionary<Language, IUniversalParser> _parsers;
-    private readonly IParserFactory _factory;
-    private readonly RecursiveChunkSplitter _splitter;
+    private readonly IParserFactory? _factory;
+    private readonly RecursiveChunkSplitter? _splitter;
     private long _totalFilesParsed;
     private long _totalChunksCreated;
 
@@ -96,11 +96,11 @@ public class UniversalParser : IUniversalParser
         var content = await System.IO.File.ReadAllTextAsync(filePath);
         var ext = Path.GetExtension(filePath).ToLowerInvariant();
         
-        var parser = _factory.GetParser(ext);
+        var parser = _factory!.GetParser(ext);
         var initialChunks = await parser.ParseAsync(content, filePath);
         
         var config = _config.GetConfig(Language.Unknown);
-        return _splitter.Split(initialChunks, config.MaxChunkSize, 0);
+        return _splitter!.Split(initialChunks, config.MaxChunkSize, 0);
     }
 
     /// <summary>
