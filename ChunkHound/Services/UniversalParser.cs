@@ -23,6 +23,14 @@ public class UniversalParser : IUniversalParser
     private long _totalFilesParsed;
     private long _totalChunksCreated;
 
+    /// <summary>
+    /// Initializes a new instance of the UniversalParser class.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="config">The language config provider.</param>
+    /// <param name="parsers">The parsers dictionary.</param>
+    /// <param name="factory">The parser factory.</param>
+    /// <param name="splitter">The chunk splitter.</param>
     public UniversalParser(ILogger<UniversalParser> logger, ILanguageConfigProvider config, Dictionary<Language, IUniversalParser> parsers, IParserFactory? factory = null, RecursiveChunkSplitter? splitter = null)
     {
         _logger = logger;
@@ -75,6 +83,11 @@ public class UniversalParser : IUniversalParser
         }
     }
 
+    /// <summary>
+    /// Parses a file by path into chunks.
+    /// </summary>
+    /// <param name="filePath">The file path to parse.</param>
+    /// <returns>List of chunks.</returns>
     public async Task<IReadOnlyList<Chunk>> ParseFileAsync(string filePath)
     {
         if (_factory == null) throw new InvalidOperationException("ParserFactory not provided");

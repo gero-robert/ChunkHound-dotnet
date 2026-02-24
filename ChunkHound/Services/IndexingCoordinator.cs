@@ -46,6 +46,18 @@ public class IndexingCoordinator : IIndexingCoordinator
     private int _filesProcessed;
     private int _chunksStored;
 
+    /// <summary>
+    /// Initializes a new instance of the IndexingCoordinator class.
+    /// </summary>
+    /// <param name="databaseProvider">The database provider.</param>
+    /// <param name="baseDirectory">The base directory for indexing.</param>
+    /// <param name="embeddingProvider">The embedding provider.</param>
+    /// <param name="languageParsers">The language parsers.</param>
+    /// <param name="chunkCacheService">The chunk cache service.</param>
+    /// <param name="config">The indexing config.</param>
+    /// <param name="logger">The logger.</param>
+    /// <param name="progress">The progress reporter.</param>
+    /// <param name="options">The indexing options.</param>
     public IndexingCoordinator(
         IDatabaseProvider databaseProvider,
         string baseDirectory,

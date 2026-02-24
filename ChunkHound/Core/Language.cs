@@ -5,20 +5,68 @@ namespace ChunkHound.Core;
 /// </summary>
 public enum Language
 {
-    CSharp,
-    Python,
-    JavaScript,
-    TypeScript,
-    Java,
-    C,
-    Cpp,
-    Go,
-    Rust,
-    PHP,
-    Ruby,
-    Yaml,
     /// <summary>
-    /// Unknown or unsupported language
+    /// C# programming language.
+    /// </summary>
+    CSharp,
+
+    /// <summary>
+    /// Python programming language.
+    /// </summary>
+    Python,
+
+    /// <summary>
+    /// JavaScript programming language.
+    /// </summary>
+    JavaScript,
+
+    /// <summary>
+    /// TypeScript programming language.
+    /// </summary>
+    TypeScript,
+
+    /// <summary>
+    /// Java programming language.
+    /// </summary>
+    Java,
+
+    /// <summary>
+    /// C programming language.
+    /// </summary>
+    C,
+
+    /// <summary>
+    /// C++ programming language.
+    /// </summary>
+    Cpp,
+
+    /// <summary>
+    /// Go programming language.
+    /// </summary>
+    Go,
+
+    /// <summary>
+    /// Rust programming language.
+    /// </summary>
+    Rust,
+
+    /// <summary>
+    /// PHP programming language.
+    /// </summary>
+    PHP,
+
+    /// <summary>
+    /// Ruby programming language.
+    /// </summary>
+    Ruby,
+
+    /// <summary>
+    /// YAML markup language.
+    /// </summary>
+    Yaml,
+
+    /// <summary>
+    /// Unknown or unsupported language.
     /// </summary>
     Unknown
 }

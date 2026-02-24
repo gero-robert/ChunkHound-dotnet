@@ -396,6 +396,14 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         return embeddings.Count;
     }
 
+    /// <summary>
+    /// Filters out chunks that already have embeddings.
+    /// </summary>
+    /// <param name="chunkIds">The chunk IDs to check.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="modelName">The model name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The chunk IDs that do not have embeddings.</returns>
     public async Task<List<long>> FilterExistingEmbeddingsAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
     {
         if (chunkIds == null || chunkIds.Count == 0)
@@ -430,6 +438,12 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         }
     }
 
+    /// <summary>
+    /// Inserts a batch of embeddings with metadata.
+    /// </summary>
+    /// <param name="embeddingsData">The embedding data to insert.</param>
+    /// <param name="chunkIdToStatus">Mapping of chunk IDs to status.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task InsertEmbeddingsBatchAsync(List<EmbeddingData> embeddingsData, Dictionary<long, string> chunkIdToStatus, CancellationToken cancellationToken = default)
     {
         if (embeddingsData == null || embeddingsData.Count == 0)
@@ -469,12 +483,25 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         }
     }
 
+    /// <summary>
+    /// Deletes embeddings for specific chunks.
+    /// </summary>
+    /// <param name="chunkIds">The chunk IDs.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="modelName">The model name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task DeleteEmbeddingsForChunksAsync(List<long> chunkIds, string providerName, string modelName, CancellationToken cancellationToken = default)
     {
         // Placeholder
         await Task.Delay(1, cancellationToken);
     }
 
+    /// <summary>
+    /// Gets chunks by file path.
+    /// </summary>
+    /// <param name="filePath">The file path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The chunks for the file.</returns>
     public async Task<List<Chunk>> GetChunksByFilePathAsync(string filePath, CancellationToken cancellationToken = default)
     {
         // Placeholder
@@ -482,6 +509,12 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         return new List<Chunk>();
     }
 
+    /// <summary>
+    /// Gets chunks by IDs.
+    /// </summary>
+    /// <param name="chunkIds">The chunk IDs.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The chunks.</returns>
     public async Task<List<Chunk>> GetChunksByIdsAsync(IReadOnlyList<long> chunkIds, CancellationToken cancellationToken = default)
     {
         if (chunkIds == null || chunkIds.Count == 0)
@@ -548,6 +581,10 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
         return file.Id ?? 1;
     }
 
+    /// <summary>
+    /// Optimizes database tables.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task OptimizeTablesAsync(CancellationToken cancellationToken = default)
     {
         await OptimizeTablesAsync();

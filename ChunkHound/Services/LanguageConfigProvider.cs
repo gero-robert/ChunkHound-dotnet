@@ -9,6 +9,9 @@ public class LanguageConfigProvider : ILanguageConfigProvider
 {
     private readonly Dictionary<Language, LanguageConfig> _configs;
 
+    /// <summary>
+    /// Initializes a new instance of the LanguageConfigProvider class.
+    /// </summary>
     public LanguageConfigProvider()
     {
         _configs = new Dictionary<Language, LanguageConfig>
@@ -23,6 +26,11 @@ public class LanguageConfigProvider : ILanguageConfigProvider
         };
     }
 
+    /// <summary>
+    /// Gets the language config for the specified language.
+    /// </summary>
+    /// <param name="language">The language.</param>
+    /// <returns>The language config.</returns>
     public LanguageConfig GetConfig(Language language)
     {
         return _configs.TryGetValue(language, out var config) ? config : CreateDefaultConfig();
