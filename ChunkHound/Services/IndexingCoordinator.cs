@@ -252,6 +252,7 @@ public class IndexingCoordinator : IIndexingCoordinator
             );
             var result = new FileProcessingResult { File = fileModel };
             await _fileResultsChannel.Writer.WriteAsync(result, cancellationToken);
+            Interlocked.Increment(ref _filesProcessed);
         }
         _fileResultsChannel.Writer.Complete();
         _logger.LogInformation("Parse input completed");
@@ -708,7 +709,7 @@ public class IndexingCoordinator : IIndexingCoordinator
         // Use Task.Run for CPU-bound directory traversal
         await Task.Run(() =>
         {
-            foreach (var file in Directory.EnumerateFiles(directory, "*.*", SearchOption.AllDirectories))
+            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly))
             {
                 if (cancellationToken.IsCancellationRequested) break;
 
