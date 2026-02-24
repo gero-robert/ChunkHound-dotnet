@@ -14,7 +14,7 @@ namespace ChunkHound.Core.Tests.Models
         public void Constructor_NullId_ThrowsArgumentNullException()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new Chunk(null!, "file1", "content", 1, 1));
+                new Chunk(null!, 1, "content", 1, 1));
         }
 
         /// <summary>
@@ -24,7 +24,7 @@ namespace ChunkHound.Core.Tests.Models
         public void Constructor_NullFileId_ThrowsArgumentNullException()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new Chunk("id1", null!, "content", 1, 1));
+                new Chunk("id1", 0, "content", 1, 1));
         }
 
         /// <summary>
@@ -34,7 +34,7 @@ namespace ChunkHound.Core.Tests.Models
         public void Constructor_NullContent_ThrowsArgumentNullException()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new Chunk("id1", "file1", null!, 1, 1));
+                new Chunk("id1", 1, null!, 1, 1));
         }
 
         /// <summary>
@@ -44,9 +44,9 @@ namespace ChunkHound.Core.Tests.Models
         public void Constructor_InvalidLineRange_ThrowsValidationException()
         {
             Assert.Throws<ValidationException>(() =>
-                new Chunk("id1", "file1", "content", 0, 1));
+                new Chunk("id1", 1, "content", 0, 1));
             Assert.Throws<ValidationException>(() =>
-                new Chunk("id1", "file1", "content", 2, 1));
+                new Chunk("id1", 1, "content", 2, 1));
         }
 
         /// <summary>
@@ -55,7 +55,7 @@ namespace ChunkHound.Core.Tests.Models
         [Fact]
         public void WithMethods_CreateNewInstances()
         {
-            var original = new Chunk("id1", "file1", "content", 1, 1);
+            var original = new Chunk("id1", 1, "content", 1, 1);
             var withId = original.WithId("id2");
             var withContent = original.WithContent("new content");
 
@@ -71,7 +71,7 @@ namespace ChunkHound.Core.Tests.Models
         [Fact]
         public void FromDict_ToDict_Roundtrip()
         {
-            var original = new Chunk("id1", "file1", "content", 1, 2,
+            var original = new Chunk("id1", 1, "content", 1, 2, Language.Unknown, ChunkType.Unknown, null, null,
                 new Dictionary<string, object> { ["key"] = "value" },
                 new ReadOnlyMemory<float>(new[] { 1.0f, 2.0f }));
 

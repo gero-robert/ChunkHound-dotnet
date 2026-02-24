@@ -130,7 +130,7 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
 
             foreach (var chunk in chunks)
             {
-                var id = chunk.Id ?? Interlocked.Increment(ref _nextChunkId) - 1;
+                var id = !string.IsNullOrEmpty(chunk.Id) ? int.Parse(chunk.Id) : Interlocked.Increment(ref _nextChunkId) - 1;
                 var hash = HashUtility.ComputeContentHash(chunk.Code);
                 var data = new Dictionary<string, object>
                 {
@@ -200,14 +200,14 @@ public class LanceDBProvider : IDatabaseProvider, IDisposable
             foreach (var row in rows)
             {
                 var chunk = new Chunk(
-                    symbol: row.GetValueOrDefault(NAME_FIELD, "") as string,
+                    id: Convert.ToInt32(row.GetValueOrDefault(ID_FIELD, 0)).ToString(),
+                    fileId: Convert.ToInt32(row.GetValueOrDefault(FILE_ID_FIELD, 0)),
+                    content: row.GetValueOrDefault(CONTENT_FIELD, "") as string,
                     startLine: Convert.ToInt32(row.GetValueOrDefault(START_LINE_FIELD, 0)),
                     endLine: Convert.ToInt32(row.GetValueOrDefault(END_LINE_FIELD, 0)),
-                    code: row.GetValueOrDefault(CONTENT_FIELD, "") as string,
-                    chunkType: ChunkTypeExtensions.FromString(row.GetValueOrDefault(CHUNK_TYPE_FIELD, "") as string),
-                    fileId: Convert.ToInt32(row.GetValueOrDefault(FILE_ID_FIELD, 0)),
                     language: LanguageExtensions.FromString(row.GetValueOrDefault(LANGUAGE_FIELD, "") as string),
-                    id: Convert.ToInt32(row.GetValueOrDefault(ID_FIELD, 0))
+                    chunkType: ChunkTypeExtensions.FromString(row.GetValueOrDefault(CHUNK_TYPE_FIELD, "") as string),
+                    symbol: row.GetValueOrDefault(NAME_FIELD, "") as string
                 );
                 result.Add(chunk);
             }

@@ -2,6 +2,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Serilog;
 using System.IO;
 using ChunkHound.Core;
@@ -17,6 +18,8 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Services.AddSerilog();
 
+builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection("Indexing"));
+
 // Register services
 builder.Services.AddSingleton<CSharpParser>();
 builder.Services.AddSingleton<Dictionary<Language, IUniversalParser>>(sp => {
@@ -29,13 +32,14 @@ builder.Services.AddSingleton<IndexingConfig>(sp => sp.GetRequiredService<IConfi
 builder.Services.AddSingleton<IIndexingCoordinator>(sp =>
     new IndexingCoordinator(
         sp.GetRequiredService<IDatabaseProvider>(),
-        sp.GetRequiredService<IConfiguration>().GetValue<string>("Indexing:TempPath") ?? System.IO.Path.GetTempPath(),
+        ".",
         sp.GetService<IEmbeddingProvider>(),
         sp.GetRequiredService<Dictionary<Language, IUniversalParser>>(), // match exact dict type from ctor
         sp.GetService<ChunkCacheService>(),
         sp.GetService<IndexingConfig>(),
         sp.GetRequiredService<ILogger<IndexingCoordinator>>(),
-        sp.GetService<IProgress<IndexingProgress>>()
+        sp.GetService<IProgress<IndexingProgress>>(),
+        sp.GetRequiredService<IOptions<IndexingOptions>>()
     ));
 builder.Services.AddSingleton<IUniversalParser>(sp => new UniversalParser(sp.GetRequiredService<ILogger<UniversalParser>>(), sp.GetRequiredService<ILanguageConfigProvider>(), sp.GetRequiredService<Dictionary<Language, IUniversalParser>>()));
 builder.Services.AddSingleton<IEmbeddingProvider, EmbeddingProvider>();

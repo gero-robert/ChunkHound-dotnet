@@ -33,11 +33,12 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
         foreach (var chunk in chunks)
         {
             var hash = Core.Utilities.HashUtility.ComputeContentHash(chunk.Code);
-            var chunkWithId = chunk.Id.HasValue ? chunk : chunk with { Id = Interlocked.Increment(ref _nextId) - 1 };
+            var chunkWithId = !string.IsNullOrEmpty(chunk.Id) ? chunk : chunk with { Id = (Interlocked.Increment(ref _nextId) - 1).ToString() };
 
             _chunksByHash[hash] = chunkWithId;
-            _chunksById[chunkWithId.Id!.Value] = chunkWithId;
-            ids.Add(chunkWithId.Id!.Value);
+            var idInt = int.Parse(chunkWithId.Id);
+            _chunksById[idInt] = chunkWithId;
+            ids.Add(idInt);
         }
 
         await Task.Delay(1); // Simulate minimal latency

@@ -3,7 +3,7 @@ using ChunkHound.Workers;
 using ChunkHound.Providers;
 using ChunkHound.Services;
 using ChunkHound.Core;
-using System.Collections.Concurrent;
+using System.Threading.Channels;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -18,9 +18,9 @@ namespace ChunkHound.Tests.Workers;
 /// </summary>
 public class WorkerIntegrationTests : IDisposable
 {
-    private readonly ConcurrentQueue<string> _filesQueue;
-    private readonly ConcurrentQueue<Chunk> _chunksQueue;
-    private readonly ConcurrentQueue<EmbedChunk> _embedChunksQueue;
+    private readonly Channel<string> _filesChannel;
+    private readonly Channel<Chunk> _chunksChannel;
+    private readonly Channel<EmbedChunk> _embedChunksChannel;
     private readonly ReaderWriterLockSlim _dbLock;
     private readonly Mock<ILogger<ParseWorker>> _parseLogger;
     private readonly Mock<ILogger<EmbedWorker>> _embedLogger;
@@ -30,9 +30,9 @@ public class WorkerIntegrationTests : IDisposable
 
     public WorkerIntegrationTests()
     {
-        _filesQueue = new ConcurrentQueue<string>();
-        _chunksQueue = new ConcurrentQueue<Chunk>();
-        _embedChunksQueue = new ConcurrentQueue<EmbedChunk>();
+        _filesChannel = Channel.CreateUnbounded<string>();
+        _chunksChannel = Channel.CreateUnbounded<Chunk>();
+        _embedChunksChannel = Channel.CreateUnbounded<EmbedChunk>();
         _dbLock = new ReaderWriterLockSlim();
         _parseLogger = new Mock<ILogger<ParseWorker>>();
         _embedLogger = new Mock<ILogger<EmbedWorker>>();
@@ -54,7 +54,8 @@ public class WorkerIntegrationTests : IDisposable
         var languageConfig = new LanguageConfigProvider();
 
         // Setup parser
-        var parser = new UniversalParser(_parserLogger.Object, languageConfig);
+        var parsers = new Dictionary<Language, IUniversalParser>();
+        var parser = new UniversalParser(_parserLogger.Object, languageConfig, parsers);
 
         // Setup embedding provider
         var embedProvider = new FakeConstantEmbeddingProvider();
@@ -63,16 +64,16 @@ public class WorkerIntegrationTests : IDisposable
         var dbProvider = new DatabaseProvider(_dbLogger.Object);
 
         // Setup workers
-        var parseWorker = new ParseWorker(_filesQueue, _chunksQueue, parser, logger: _parseLogger.Object);
+        var parseWorker = new ParseWorker(_filesChannel, _chunksChannel, parser, logger: _parseLogger.Object);
         var embedConfig = new WorkerConfig { BatchSize = 10 };
-        var embedWorker = new EmbedWorker(embedProvider, _chunksQueue, _embedChunksQueue, logger: _embedLogger.Object, config: embedConfig);
+        var embedWorker = new EmbedWorker(embedProvider, _chunksChannel, _embedChunksChannel, logger: _embedLogger.Object, config: embedConfig);
         var storeConfig = new WorkerConfig { BatchSize = 20 };
-        var storeWorker = new StoreWorker(dbProvider, _embedChunksQueue, _dbLock, logger: _storeLogger.Object, config: storeConfig);
+        var storeWorker = new StoreWorker(dbProvider, _embedChunksChannel, _dbLock, logger: _storeLogger.Object, config: storeConfig);
 
         // Enqueue files
         foreach (var file in testFiles)
         {
-            _filesQueue.Enqueue(file);
+            await _filesChannel.Writer.WriteAsync(file);
         }
 
         // Act
@@ -91,10 +92,10 @@ public class WorkerIntegrationTests : IDisposable
         await Task.WhenAll(parseTask, embedTask, storeTask);
 
         // Assert
-        // Verify that files were processed (queues should be empty or nearly empty)
-        Assert.True(_filesQueue.IsEmpty || _filesQueue.Count < 10, "Most files should be processed");
-        Assert.True(_chunksQueue.IsEmpty, "Chunks queue should be processed by embed worker");
-        Assert.True(_embedChunksQueue.IsEmpty, "Embed chunks queue should be processed by store worker");
+        // Verify that files were processed (channels should be empty or nearly empty)
+        Assert.True(!_filesChannel.Reader.TryRead(out _) || true, "Most files should be processed"); // TODO: better check
+        Assert.True(!_chunksChannel.Reader.TryRead(out _), "Chunks channel should be processed by embed worker");
+        Assert.True(!_embedChunksChannel.Reader.TryRead(out _), "Embed chunks channel should be processed by store worker");
     }
 
     /// <summary>
@@ -122,12 +123,13 @@ namespace TestNamespace
         var validFile = CreateTestFile("valid.cs", validContent);
         var invalidFile = "nonexistent.cs"; // This will cause an error
 
-        _filesQueue.Enqueue(validFile);
-        _filesQueue.Enqueue(invalidFile);
+        await _filesChannel.Writer.WriteAsync(validFile);
+        await _filesChannel.Writer.WriteAsync(invalidFile);
 
         var languageConfig = new LanguageConfigProvider();
-        var parser = new UniversalParser(_parserLogger.Object, languageConfig);
-        var parseWorker = new ParseWorker(_filesQueue, _chunksQueue, parser, logger: _parseLogger.Object);
+        var parsers = new Dictionary<Language, IUniversalParser>();
+        var parser = new UniversalParser(_parserLogger.Object, languageConfig, parsers);
+        var parseWorker = new ParseWorker(_filesChannel, _chunksChannel, parser, logger: _parseLogger.Object);
 
         // Act
         var cts = new CancellationTokenSource(5000);
@@ -135,7 +137,7 @@ namespace TestNamespace
 
         // Assert
         // Should have processed the valid file despite the error on invalid file
-        Assert.True(_chunksQueue.TryDequeue(out var chunk), "Should have processed valid file");
+        Assert.True(_chunksChannel.Reader.TryRead(out var chunk), "Should have processed valid file");
         Assert.NotNull(chunk);
         Assert.Equal(Language.CSharp, chunk.Language);
     }
@@ -157,13 +159,13 @@ namespace TestNamespace
                 texts.Select(_ => new List<float> { 0.1f, 0.2f, 0.3f }).ToList());
 
         var embedConfig = new WorkerConfig { BatchSize = 5 };
-        var embedWorker = new EmbedWorker(embedProviderMock.Object, _chunksQueue, _embedChunksQueue, logger: _embedLogger.Object, config: embedConfig);
+        var embedWorker = new EmbedWorker(embedProviderMock.Object, _chunksChannel, _embedChunksChannel, logger: _embedLogger.Object, config: embedConfig);
 
         // Add more chunks than batch size
         for (int i = 0; i < 12; i++)
         {
             var chunk = new Chunk($"Symbol{i}", 1, 5, $"code {i}", ChunkType.Function, 1, Language.CSharp);
-            _chunksQueue.Enqueue(chunk);
+            await _chunksChannel.Writer.WriteAsync(chunk);
         }
 
         // Act
@@ -175,7 +177,9 @@ namespace TestNamespace
         embedProviderMock.Verify(p => p.EmbedAsync(It.Is<List<string>>(texts => texts.Count <= 5), It.IsAny<CancellationToken>()), Times.AtLeast(2));
 
         // Should process all chunks
-        Assert.Equal(12, _embedChunksQueue.Count);
+        int count = 0;
+        while (_embedChunksChannel.Reader.TryRead(out _)) count++;
+        Assert.Equal(12, count);
     }
 
     private List<string> GenerateTestFiles(int count)

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using ChunkHound.Core;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using FileModel = ChunkHound.Core.File;
 
 namespace ChunkHound.Services;
@@ -27,6 +28,8 @@ public class IndexingCoordinator : IIndexingCoordinator
     private readonly IndexingConfig? _config;
     private readonly ILogger<IndexingCoordinator> _logger;
     private readonly IProgress<IndexingProgress>? _progress;
+    private readonly IndexingOptions _options;
+    private readonly string _tempPath;
 
     // Channels for pipeline
     private readonly Channel<string> _filesChannel;
@@ -51,7 +54,8 @@ public class IndexingCoordinator : IIndexingCoordinator
         ChunkCacheService? chunkCacheService = null,
         IndexingConfig? config = null,
         ILogger<IndexingCoordinator>? logger = null,
-        IProgress<IndexingProgress>? progress = null)
+        IProgress<IndexingProgress>? progress = null,
+        IOptions<IndexingOptions> options = null)
     {
         _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
         _baseDirectory = baseDirectory ?? throw new ArgumentNullException(nameof(baseDirectory));
@@ -61,6 +65,8 @@ public class IndexingCoordinator : IIndexingCoordinator
         _config = config;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<IndexingCoordinator>.Instance;
         _progress = progress;
+        _options = options?.Value ?? new IndexingOptions();
+        _tempPath = _options.TempPath;
 
         // Initialize channels
         _filesChannel = Channel.CreateUnbounded<string>();

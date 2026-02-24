@@ -1,6 +1,6 @@
-using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
 using ChunkHound.Core;
 using ChunkHound.Core.Workers;
 using Microsoft.Extensions.Logging;
@@ -15,8 +15,8 @@ namespace ChunkHound.Workers;
 public class EmbedWorker : WorkerBase, IEmbedWorker, IDisposable
 {
     private readonly IEmbeddingProvider _embeddingProvider;
-    private readonly ConcurrentQueue<Chunk> _chunksQueue;
-    private readonly ConcurrentQueue<EmbedChunk> _embedChunksQueue;
+    private readonly Channel<Chunk> _chunksChannel;
+    private readonly Channel<EmbedChunk> _embedChunksChannel;
     private readonly WorkerConfig _config;
 
     /// <summary>
@@ -24,15 +24,15 @@ public class EmbedWorker : WorkerBase, IEmbedWorker, IDisposable
     /// </summary>
     public EmbedWorker(
         IEmbeddingProvider embeddingProvider,
-        ConcurrentQueue<Chunk> chunksQueue,
-        ConcurrentQueue<EmbedChunk> embedChunksQueue,
+        Channel<Chunk> chunksChannel,
+        Channel<EmbedChunk> embedChunksChannel,
         ILogger<EmbedWorker>? logger = null,
         WorkerConfig? config = null)
         : base(logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<EmbedWorker>.Instance)
     {
         _embeddingProvider = embeddingProvider ?? throw new ArgumentNullException(nameof(embeddingProvider));
-        _chunksQueue = chunksQueue ?? throw new ArgumentNullException(nameof(chunksQueue));
-        _embedChunksQueue = embedChunksQueue ?? throw new ArgumentNullException(nameof(embedChunksQueue));
+        _chunksChannel = chunksChannel ?? throw new ArgumentNullException(nameof(chunksChannel));
+        _embedChunksChannel = embedChunksChannel ?? throw new ArgumentNullException(nameof(embedChunksChannel));
         _config = config ?? new WorkerConfig();
     }
 
@@ -41,91 +41,82 @@ public class EmbedWorker : WorkerBase, IEmbedWorker, IDisposable
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var batch = new List<Chunk>();
-
+        var reader = _chunksChannel.Reader;
+        var writer = _embedChunksChannel.Writer;
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
+            while (await reader.WaitToReadAsync(cancellationToken))
             {
-                try
+                var batch = new List<Chunk>();
+                while (batch.Count < _config.BatchSize && reader.TryRead(out var chunk))
                 {
-                    // Collect batch
-                    while (batch.Count < _config.BatchSize && _chunksQueue.TryDequeue(out var chunk))
-                    {
-                        batch.Add(chunk);
-                    }
-
-                    if (batch.Count != 0)
-                    {
-                        await ProcessBatchAsync(batch, cancellationToken);
-                        batch.Clear();
-                    }
-                    else
-                    {
-                        // Small delay to prevent busy waiting
-                        await Task.Delay(_config.BusyWaitDelayMs, cancellationToken);
-                    }
+                    batch.Add(chunk);
                 }
-                catch (OperationCanceledException)
+                if (batch.Count > 0)
                 {
-                    // Normal cancellation, break the loop
-                    break;
+                    var processed = await ProcessBatchAsync(batch, cancellationToken);
+                    foreach (var embedChunk in processed)
+                    {
+                        await writer.WriteAsync(embedChunk, cancellationToken);
+                    }
                 }
             }
         }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not ObjectDisposedException)
+        {
+            _logger.LogError(ex, "{WorkerName} failed - continuing", nameof(EmbedWorker));
+            writer.TryComplete(ex);
+        }
         finally
         {
-            // Process any remaining items in batch
-            if (batch.Count != 0)
-            {
-                try
-                {
-                    await ProcessBatchAsync(batch, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to process final batch during shutdown");
-                }
-            }
+            writer.TryComplete();
         }
     }
 
     /// <summary>
-    /// Processes a batch of chunks by generating embeddings and enqueuing results.
+    /// Processes a batch of chunks by generating embeddings and returning results.
     /// </summary>
-    private async Task ProcessBatchAsync(List<Chunk> batch, CancellationToken cancellationToken)
+    private async Task<List<EmbedChunk>> ProcessBatchAsync(List<Chunk> batch, CancellationToken cancellationToken)
     {
-        try
+        const int MAX_RETRIES = 3;
+        var delay = TimeSpan.FromMilliseconds(100);
+        for (int r = 0; r < MAX_RETRIES; r++)
         {
-            var texts = batch.Select(c => c.Code).ToList();
-            var embeddings = await _embeddingProvider.EmbedAsync(texts, cancellationToken);
-
-            // Validate embedding dimensions match batch size
-            if (embeddings.Count != batch.Count)
+            try
             {
-                throw new InvalidOperationException(
-                    $"Embedding count ({embeddings.Count}) doesn't match batch size ({batch.Count})");
-            }
+                var texts = batch.Select(c => c.Code).ToList();
+                var embeddings = await _embeddingProvider.EmbedAsync(texts, cancellationToken);
 
-            // Create embed chunks and enqueue
-            for (var i = 0; i < batch.Count; i++)
+                // Validate embedding dimensions match batch size
+                if (embeddings.Count != batch.Count)
+                {
+                    throw new InvalidOperationException(
+                        $"Embedding count ({embeddings.Count}) doesn't match batch size ({batch.Count})");
+                }
+
+                // Create embed chunks
+                var embedChunks = new List<EmbedChunk>();
+                for (var i = 0; i < batch.Count; i++)
+                {
+                    var embedChunk = new EmbedChunk(
+                        batch[i],
+                        embeddings[i],
+                        _embeddingProvider.ProviderName,
+                        _embeddingProvider.ModelName);
+                    embedChunks.Add(embedChunk);
+                }
+
+                _logger.LogDebug("Processed batch of {Count} chunks with embeddings", batch.Count);
+                return embedChunks;
+            }
+            catch (Exception ex) when (r < MAX_RETRIES - 1)
             {
-                var embedChunk = new EmbedChunk(
-                    batch[i],
-                    embeddings[i],
-                    _embeddingProvider.ProviderName,
-                    _embeddingProvider.ModelName);
-
-                _embedChunksQueue.Enqueue(embedChunk);
+                _logger.LogWarning(ex, "Embed API retry {Attempt}/{Max}", r + 1, MAX_RETRIES);
+                await Task.Delay(delay * (r + 1), cancellationToken);
             }
-
-            _logger.LogDebug("Processed batch of {Count} chunks with embeddings", batch.Count);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to process batch of {Count} chunks", batch.Count);
-            throw;
-        }
+        _logger.LogError("Embed API failed after {MaxRetries} retries", MAX_RETRIES);
+        return new List<EmbedChunk>(); // skip batch
     }
 
 

@@ -1,6 +1,6 @@
-using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
 using ChunkHound.Core;
 using ChunkHound.Core.Workers;
 using Microsoft.Extensions.Logging;
@@ -15,8 +15,8 @@ namespace ChunkHound.Workers;
 /// </summary>
 public class ParseWorker : WorkerBase, IParseWorker
 {
-    private readonly ConcurrentQueue<string> _filesQueue;
-    private readonly ConcurrentQueue<Chunk> _chunksQueue;
+    private readonly Channel<string> _filesChannel;
+    private readonly Channel<Chunk> _chunksChannel;
     private readonly IUniversalParser _parser;
     private readonly int _workerId;
     private readonly WorkerConfig _config;
@@ -26,16 +26,16 @@ public class ParseWorker : WorkerBase, IParseWorker
     /// Initializes a new instance of the ParseWorker class.
     /// </summary>
     public ParseWorker(
-        ConcurrentQueue<string> filesQueue,
-        ConcurrentQueue<Chunk> chunksQueue,
+        Channel<string> filesChannel,
+        Channel<Chunk> chunksChannel,
         IUniversalParser parser,
         int workerId = 0,
         ILogger<ParseWorker>? logger = null,
         WorkerConfig? config = null)
         : base(logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParseWorker>.Instance)
     {
-        _filesQueue = filesQueue ?? throw new ArgumentNullException(nameof(filesQueue));
-        _chunksQueue = chunksQueue ?? throw new ArgumentNullException(nameof(chunksQueue));
+        _filesChannel = filesChannel ?? throw new ArgumentNullException(nameof(filesChannel));
+        _chunksChannel = chunksChannel ?? throw new ArgumentNullException(nameof(chunksChannel));
         _parser = parser ?? throw new ArgumentNullException(nameof(parser));
         _workerId = workerId;
         _config = config ?? new WorkerConfig();
@@ -51,59 +51,64 @@ public class ParseWorker : WorkerBase, IParseWorker
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        var reader = _filesChannel.Reader;
+        var writer = _chunksChannel.Writer;
+        try
         {
-            try
+            while (await reader.WaitToReadAsync(cancellationToken))
             {
-                var filePath = await DequeueFileAsync(cancellationToken);
-                if (filePath == null)
+                var batch = new List<string>();
+                while (batch.Count < 1 && reader.TryRead(out var item))
                 {
-                    // Queue is empty, small delay to prevent busy waiting
-                    await Task.Delay(_config.BusyWaitDelayMs, cancellationToken);
-                    continue;
+                    batch.Add(item);
                 }
-
-                var chunks = await ParseFileAsync(filePath, cancellationToken);
-                await EnqueueChunksAsync(chunks, cancellationToken);
-
-                Interlocked.Increment(ref _itemsProcessed);
+                if (batch.Count > 0)
+                {
+                    var processed = await ProcessBatchAsync(batch, cancellationToken);
+                    foreach (var chunk in processed)
+                    {
+                        await writer.WriteAsync(chunk, cancellationToken);
+                    }
+                    Interlocked.Add(ref _itemsProcessed, batch.Count);
+                }
             }
-            catch (OperationCanceledException)
-            {
-                // Normal cancellation, break the loop
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ParseWorker {WorkerId} encountered error", _workerId);
-                // Continue processing other files despite errors
-            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not ObjectDisposedException)
+        {
+            _logger.LogError(ex, "{WorkerName} failed - continuing", nameof(ParseWorker));
+            writer.TryComplete(ex);
+        }
+        finally
+        {
+            writer.TryComplete();
         }
     }
 
     /// <summary>
-    /// Dequeues the next file path from the files queue.
+    /// Processes a batch of files by parsing them into chunks.
     /// </summary>
-    private async Task<string?> DequeueFileAsync(CancellationToken cancellationToken)
+    private async Task<List<Chunk>> ProcessBatchAsync(List<string> batch, CancellationToken cancellationToken)
     {
-        string? filePath = null;
-
-        // Use Task.Run for the synchronous dequeue operation
-        await Task.Run(() =>
+        var allChunks = new List<Chunk>();
+        foreach (var filePath in batch)
         {
-            if (_filesQueue.TryDequeue(out var path))
+            try
             {
-                filePath = path;
+                var chunks = await ParseFileAsync(filePath, cancellationToken);
+                allChunks.AddRange(chunks);
             }
-        }, cancellationToken);
-
-        if (filePath != null)
-        {
-            _logger.LogDebug("ParseWorker {WorkerId} dequeued file: {FilePath}", _workerId, filePath);
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ParseWorker {WorkerId} failed to parse file: {FilePath}, skipping", _workerId, filePath);
+            }
         }
-
-        return filePath;
+        return allChunks;
     }
+
+    /// <summary>
+    /// Parses a file using the universal parser.
+    /// </summary>
+
 
     /// <summary>
     /// Parses a file using the universal parser.
@@ -112,64 +117,34 @@ public class ParseWorker : WorkerBase, IParseWorker
     {
         _logger.LogInformation("ParseWorker {WorkerId} parsing file: {FilePath}", _workerId, filePath);
 
-        try
+        // Detect language from file extension
+        var language = DetectLanguageFromPath(filePath);
+        if (language == Language.Unknown)
         {
-            // Detect language from file extension
-            var language = DetectLanguageFromPath(filePath);
-            if (language == Language.Unknown)
-            {
-                _logger.LogWarning("ParseWorker {WorkerId} skipping unsupported file: {FilePath}", _workerId, filePath);
-                return new List<Chunk>();
-            }
-
-            // Create File object for the parser
-            var fileInfo = new System.IO.FileInfo(filePath);
-            var file = new FileModel(
-                path: filePath,
-                mtime: new DateTimeOffset(fileInfo.LastWriteTimeUtc).ToUnixTimeSeconds(),
-                language: language,
-                sizeBytes: fileInfo.Length,
-                id: null, // FileId will be assigned by coordinator/database
-                contentHash: null
-            );
-
-            var chunks = await _parser.ParseAsync(file);
-
-            _logger.LogInformation("ParseWorker {WorkerId} parsed {FilePath}: {ChunkCount} chunks",
-                _workerId, filePath, chunks.Count);
-
-            return chunks;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "ParseWorker {WorkerId} failed to parse file: {FilePath}", _workerId, filePath);
+            _logger.LogWarning("ParseWorker {WorkerId} skipping unsupported file: {FilePath}", _workerId, filePath);
             return new List<Chunk>();
         }
+
+        // Create File object for the parser
+        var fileInfo = new System.IO.FileInfo(filePath);
+        var file = new FileModel(
+            path: filePath,
+            mtime: new DateTimeOffset(fileInfo.LastWriteTimeUtc).ToUnixTimeSeconds(),
+            language: language,
+            sizeBytes: fileInfo.Length,
+            id: null, // FileId will be assigned by coordinator/database
+            contentHash: null
+        );
+
+        var chunks = await _parser.ParseAsync(file);
+
+        _logger.LogInformation("ParseWorker {WorkerId} parsed {FilePath}: {ChunkCount} chunks",
+            _workerId, filePath, chunks.Count);
+
+        return chunks;
     }
 
-    /// <summary>
-    /// Enqueues parsed chunks to the chunks queue.
-    /// </summary>
-    private async Task EnqueueChunksAsync(List<Chunk> chunks, CancellationToken cancellationToken)
-    {
-        if (chunks.Count == 0)
-        {
-            return;
-        }
 
-        // Use Task.Run for the synchronous enqueue operations
-        await Task.Run(() =>
-        {
-            foreach (var chunk in chunks)
-            {
-                _chunksQueue.Enqueue(chunk);
-            }
-        }, cancellationToken);
-
-        Interlocked.Add(ref _totalChunksGenerated, chunks.Count);
-
-        _logger.LogDebug("ParseWorker {WorkerId} enqueued {ChunkCount} chunks", _workerId, chunks.Count);
-    }
 
     /// <summary>
     /// Detects programming language from file path.

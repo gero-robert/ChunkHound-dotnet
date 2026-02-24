@@ -184,7 +184,7 @@ public class EmbeddingService
             var modelName = _embeddingProvider.ModelName;
 
             await _databaseProvider.DeleteEmbeddingsForChunksAsync(
-                chunksToRegenerate.Select(c => (long)c.Id!).ToList(), providerName, modelName, cancellationToken);
+                chunksToRegenerate.Select(c => long.Parse(c.Id!)).ToList(), providerName, modelName, cancellationToken);
 
             // Generate new embeddings
             var result = await GenerateEmbeddingsForChunksAsync(chunksToRegenerate, cancellationToken: cancellationToken);
@@ -210,13 +210,13 @@ public class EmbeddingService
     {
         if (_embeddingProvider == null) return chunks;
 
-        var chunkIds = chunks.Where(c => c.Id.HasValue).Select(c => (long)c.Id!).ToList();
+        var chunkIds = chunks.Where(c => !string.IsNullOrEmpty(c.Id)).Select(c => long.Parse(c.Id!)).ToList();
         if (chunkIds.Count == 0) return chunks;
 
         var existingIds = await _databaseProvider.FilterExistingEmbeddingsAsync(
             chunkIds, _embeddingProvider.ProviderName, _embeddingProvider.ModelName, cancellationToken);
 
-        return chunks.Where(c => c.Id.HasValue && !existingIds.Contains((long)c.Id!)).ToList();
+        return chunks.Where(c => !string.IsNullOrEmpty(c.Id) && !existingIds.Contains(long.Parse(c.Id!))).ToList();
     }
 
     /// <summary>
@@ -272,7 +272,7 @@ public class EmbeddingService
 
             // Add successful embeddings
             allEmbeddingsData.AddRange(batchResult.SuccessfulChunks.Select(c => new EmbeddingData(
-                c.Chunk.Id!.Value,
+                long.Parse(c.Chunk.Id!),
                 _embeddingProvider!.ProviderName,
                 _embeddingProvider!.ModelName,
                 c.Embedding.Count,
@@ -317,7 +317,7 @@ public class EmbeddingService
             foreach (var (chunk, _, classification) in batchResult.FailedChunks)
             {
                 var status = classification == EmbeddingErrorClassification.Permanent ? "permanent_failure" : "failed";
-                chunkIdToStatus[chunk.Id!.Value] = status;
+                chunkIdToStatus[long.Parse(chunk.Id!)] = status;
             }
         }
 

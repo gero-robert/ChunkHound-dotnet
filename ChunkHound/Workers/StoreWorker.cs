@@ -1,6 +1,6 @@
-using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
 using ChunkHound.Core;
 using ChunkHound.Core.Workers;
 using Microsoft.Extensions.Logging;
@@ -15,7 +15,7 @@ namespace ChunkHound.Workers;
 public class StoreWorker : WorkerBase, IStoreWorker, IDisposable
 {
     private readonly IDatabaseProvider _databaseProvider;
-    private readonly ConcurrentQueue<EmbedChunk> _embedChunksQueue;
+    private readonly Channel<EmbedChunk> _embedChunksChannel;
     private readonly ReaderWriterLockSlim _dbLock;
     private readonly WorkerConfig _config;
 
@@ -24,14 +24,14 @@ public class StoreWorker : WorkerBase, IStoreWorker, IDisposable
     /// </summary>
     public StoreWorker(
         IDatabaseProvider databaseProvider,
-        ConcurrentQueue<EmbedChunk> embedChunksQueue,
+        Channel<EmbedChunk> embedChunksChannel,
         ReaderWriterLockSlim dbLock,
         ILogger<StoreWorker>? logger = null,
         WorkerConfig? config = null)
         : base(logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StoreWorker>.Instance)
     {
         _databaseProvider = databaseProvider ?? throw new ArgumentNullException(nameof(databaseProvider));
-        _embedChunksQueue = embedChunksQueue ?? throw new ArgumentNullException(nameof(embedChunksQueue));
+        _embedChunksChannel = embedChunksChannel ?? throw new ArgumentNullException(nameof(embedChunksChannel));
         _dbLock = dbLock ?? throw new ArgumentNullException(nameof(dbLock));
         _config = config ?? new WorkerConfig();
     }
@@ -41,52 +41,25 @@ public class StoreWorker : WorkerBase, IStoreWorker, IDisposable
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var batch = new List<EmbedChunk>();
-
+        var reader = _embedChunksChannel.Reader;
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
+            while (await reader.WaitToReadAsync(cancellationToken))
             {
-                try
+                var batch = new List<EmbedChunk>();
+                while (batch.Count < _config.BatchSize && reader.TryRead(out var embedChunk))
                 {
-                    // Collect batch
-                    while (batch.Count < _config.BatchSize && _embedChunksQueue.TryDequeue(out var embedChunk))
-                    {
-                        batch.Add(embedChunk);
-                    }
-
-                    if (batch.Count != 0)
-                    {
-                        await ProcessBatchAsync(batch, cancellationToken);
-                        batch.Clear();
-                    }
-                    else
-                    {
-                        // Small delay to prevent busy waiting
-                        await Task.Delay(_config.BusyWaitDelayMs, cancellationToken);
-                    }
+                    batch.Add(embedChunk);
                 }
-                catch (OperationCanceledException)
+                if (batch.Count > 0)
                 {
-                    // Normal cancellation, break the loop
-                    break;
+                    await ProcessBatchAsync(batch, cancellationToken);
                 }
             }
         }
-        finally
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not ObjectDisposedException)
         {
-            // Process any remaining items in batch
-            if (batch.Count != 0)
-            {
-                try
-                {
-                    await ProcessBatchAsync(batch, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to process final batch during shutdown");
-                }
-            }
+            _logger.LogError(ex, "{WorkerName} failed - continuing", nameof(StoreWorker));
         }
     }
 
@@ -95,46 +68,39 @@ public class StoreWorker : WorkerBase, IStoreWorker, IDisposable
     /// </summary>
     private async Task ProcessBatchAsync(List<EmbedChunk> batch, CancellationToken cancellationToken)
     {
-        var attempt = 0;
-        var delayMs = _config.RetryInitialDelayMs;
+        await UpsertWithRetryAsync(batch, cancellationToken);
+    }
 
-        while (attempt <= _config.MaxRetries)
+    private async Task UpsertWithRetryAsync(IReadOnlyList<EmbedChunk> embedChunks, CancellationToken ct)
+    {
+        const int MAX_RETRIES = 3;
+        var delay = TimeSpan.FromMilliseconds(100);
+        for (int r = 0; r < MAX_RETRIES; r++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
             try
             {
                 await ExecuteWithLockAsync(async () =>
                 {
-                    var chunks = batch.Select(ec => ec.Chunk).ToList();
-                    var embeddings = batch.Select(ec => ec.Embedding).ToList();
+                    var chunks = embedChunks.Select(ec => ec.Chunk).ToList();
+                    var embeddings = embedChunks.Select(ec => ec.Embedding).ToList();
 
                     // Insert chunks and get their IDs
-                    var chunkIds = await _databaseProvider.InsertChunksBatchAsync(chunks, cancellationToken);
+                    var chunkIds = await _databaseProvider.InsertChunksBatchAsync(chunks, ct);
 
                     // Associate embeddings with chunk IDs
-                    await _databaseProvider.InsertEmbeddingsBatchAsync(chunkIds, embeddings, cancellationToken);
+                    await _databaseProvider.InsertEmbeddingsBatchAsync(chunkIds, embeddings, ct);
 
-                    _logger.LogDebug("Stored batch of {Count} chunks with embeddings", batch.Count);
-                }, cancellationToken);
-
-                return; // Success
+                    _logger.LogDebug("Stored batch of {Count} chunks with embeddings", embedChunks.Count);
+                }, ct);
+                return;
             }
-            catch (Exception ex) when (attempt < _config.MaxRetries)
+            catch (Exception ex) when (r < MAX_RETRIES - 1)
             {
-                attempt++;
-                _logger.LogWarning(ex, "Batch storage attempt {Attempt}/{MaxRetries} failed, retrying in {Delay}ms",
-                    attempt, _config.MaxRetries, delayMs);
-
-                await Task.Delay(delayMs, cancellationToken);
-                delayMs = Math.Min(delayMs * 2, _config.MaxRetryDelayMs); // Exponential backoff
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Batch storage failed permanently after {MaxRetries} attempts", _config.MaxRetries);
-                throw;
+                _logger.LogWarning(ex, "DB upsert retry {Attempt}/{Max}", r + 1, MAX_RETRIES);
+                await Task.Delay(delay * (r + 1), ct);
             }
         }
+        _logger.LogError("DB upsert failed after {MaxRetries} retries", MAX_RETRIES);
     }
 
     /// <summary>
