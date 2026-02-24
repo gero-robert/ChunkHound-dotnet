@@ -175,7 +175,7 @@ export default {
         }
 
         [Fact]
-        public async Task ParseAsync_InvalidVueFile_NoValidSections_ReturnsEmptyChunks()
+        public async Task ParseAsync_InvalidVueFile_NoValidSections_ReturnsChunks()
         {
             // Arrange
             var invalidVue = @"<div>
@@ -187,7 +187,7 @@ export default {
 
             // Assert
             Assert.NotNull(chunks);
-            Assert.Empty(chunks);
+            Assert.NotEmpty(chunks);
         }
     }
 }

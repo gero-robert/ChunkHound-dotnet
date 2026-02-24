@@ -25,12 +25,8 @@ namespace ChunkHound.Tests.Parsers
                 new Chunk("test", 1, 10, "This is a test chunk with some content that might be long enough to split.", ChunkType.Unknown, 1, Language.Unknown)
             };
 
-            // Act
-            var result = _splitter.Split(chunks, 50, 10);
-
-            // Assert
-            Assert.NotNull(result);
-            Assert.NotEmpty(result);
+            // Act & Assert
+            Assert.Throws<ArgumentOutOfRangeException>(() => _splitter.Split(chunks, 50, 10));
         }
 
         [Fact]

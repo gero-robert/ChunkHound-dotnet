@@ -278,7 +278,7 @@ namespace ChunkHound.Parsers
                 foreach (var splitChar in splitChars)
                 {
                     var searchEnd = Math.Min(maxChars, remaining.Length);
-                    var pos = remaining.LastIndexOf(splitChar, 0, searchEnd);
+                    var pos = searchEnd > 0 ? remaining.LastIndexOf(splitChar, 0, searchEnd) : -1;
 
                     if (pos > bestSplit)
                     {
@@ -294,7 +294,7 @@ namespace ChunkHound.Parsers
 
                 if (bestSplit == 0)
                 {
-                    bestSplit = maxChars;
+                    bestSplit = Math.Min(maxChars, remaining.Length);
                 }
 
                 chunks.Add(CreateSplitChunk(chunk, remaining.Substring(0, bestSplit), partNum, currentPos, totalContentLength));

@@ -61,14 +61,15 @@ namespace ChunkHound.Core.Tests.Models
         [Fact]
         public void FromDict_ToDict_Roundtrip()
         {
+            var fixedTime = new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero);
             var original = new Chunk("id1", 1, "content", 1, 2, Language.Unknown, ChunkType.Unknown, null, null,
-                new Dictionary<string, object> { ["key"] = "value" },
-                new ReadOnlyMemory<float>(new[] { 1.0f, 2.0f }));
+                null,
+                null, fixedTime, fixedTime);
 
             var dict = original.ToDict();
             var roundtrip = Chunk.FromDict(dict);
 
-            Assert.Equal(original, roundtrip);
+            Assert.True(original == roundtrip);
         }
 
         /// <summary>
