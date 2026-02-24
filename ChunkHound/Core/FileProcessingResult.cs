@@ -47,5 +47,10 @@ namespace ChunkHound.Core
         /// The chunks extracted from the file.
         /// </summary>
         public List<Chunk> Chunks { get; init; } = new();
+
+        /// <summary>
+        /// The file being processed.
+        /// </summary>
+        public File File { get; init; }
     }
 }

@@ -50,4 +50,21 @@ public class EmbeddingProvider : IEmbeddingProvider
     /// Gets the recommended concurrency level.
     /// </summary>
     public int GetRecommendedConcurrency() => 1;
+
+    /// <summary>
+    /// Generates embedding for a single text.
+    /// </summary>
+    /// <param name="text">The text to embed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The embedding.</returns>
+    public async Task<List<float>> GetEmbeddingAsync(string text, CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new TaskCanceledException();
+        }
+        _logger.LogInformation("Embedding single text");
+        // Stub implementation - returns empty embedding
+        return new List<float>();
+    }
 }

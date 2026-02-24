@@ -63,4 +63,16 @@ public class FakeConstantEmbeddingProvider : Core.IEmbeddingProvider
     /// Gets the recommended concurrency level.
     /// </summary>
     public int GetRecommendedConcurrency() => 8;
+
+    /// <summary>
+    /// Generates embedding for a single text.
+    /// </summary>
+    /// <param name="text">The text to embed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The embedding.</returns>
+    public async Task<List<float>> GetEmbeddingAsync(string text, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(1, cancellationToken); // Simulate minimal latency
+        return GenerateRandomEmbedding();
+    }
 }

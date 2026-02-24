@@ -14,6 +14,14 @@ public interface IEmbeddingProvider
     Task<List<List<float>>> EmbedAsync(List<string> texts, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Generates embedding for a single text.
+    /// </summary>
+    /// <param name="text">The text to embed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The embedding.</returns>
+    Task<List<float>> GetEmbeddingAsync(string text, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets the name of the embedding provider.
     /// </summary>
     string ProviderName { get; }

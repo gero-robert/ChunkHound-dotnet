@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using ChunkHound.Core;
+using ChunkHound.Workers;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -32,10 +33,9 @@ public class IndexingCoordinator : IIndexingCoordinator
     private readonly string _tempPath;
 
     // Channels for pipeline
-    private readonly Channel<string> _filesChannel;
-    private readonly Channel<List<int>> _chunkIdsChannel;
+    private readonly Channel<FileProcessingResult> _fileResultsChannel;
     private readonly Channel<Chunk> _chunksChannel;
-    private readonly Channel<EmbedChunk> _embedChunksChannel;
+    private readonly Channel<Chunk> _embeddedChunksChannel;
 
     // Synchronization primitives
     private readonly ReaderWriterLockSlim _dbLock;
@@ -81,10 +81,9 @@ public class IndexingCoordinator : IIndexingCoordinator
         _tempPath = _options.TempPath;
 
         // Initialize channels
-        _filesChannel = Channel.CreateUnbounded<string>();
-        _chunkIdsChannel = Channel.CreateUnbounded<List<int>>();
+        _fileResultsChannel = Channel.CreateUnbounded<FileProcessingResult>();
         _chunksChannel = Channel.CreateUnbounded<Chunk>();
-        _embedChunksChannel = Channel.CreateUnbounded<EmbedChunk>();
+        _embeddedChunksChannel = Channel.CreateUnbounded<Chunk>();
 
         // Initialize synchronization primitives
         _dbLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
@@ -224,37 +223,39 @@ public class IndexingCoordinator : IIndexingCoordinator
         List<string> files,
         CancellationToken cancellationToken)
     {
-        var parseChannel = Channel.CreateBounded<FileProcessingResult>(new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait });
-        var storeChannel = Channel.CreateBounded<Chunk>(new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait });
-        Channel<Chunk>? embedChannel = null;
-        List<Task>? embedWorkers = null;
-        if (_embeddingProvider != null)
-        {
-            embedChannel = Channel.CreateBounded<Chunk>(new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait });
-            embedWorkers = Enumerable.Range(0, _config?.EmbedWorkers ?? 2).Select(i => Task.Run(() => RunEmbedWorker(embedChannel!.Reader, storeChannel.Writer, cancellationToken))).ToList();
-            _logger.LogInformation("Embed stage active");
-        }
-        List<Task> parseWorkers = Enumerable.Range(0, _config?.ParseWorkers ?? 4).Select(i => Task.Run(() => RunParseWorker(parseChannel.Reader, (embedChannel ?? storeChannel).Writer, cancellationToken))).ToList();
-        List<Task> storeWorkers = Enumerable.Range(0, _config?.StoreWorkers ?? 2).Select(i => Task.Run(() => RunStoreWorker(storeChannel.Reader, cancellationToken))).ToList();
-        _logger.LogInformation("Parse stage started");
+        // Create workers
+        var parseWorker = new ParseWorker(_languageParsers, null);
+        var embedWorker = new EmbedWorker(_embeddingProvider, null);
+        var storeWorker = new StoreWorker(_databaseProvider, null);
+
+        // Run workers
+        var parseTask = parseWorker.RunAsync(_fileResultsChannel.Reader, _chunksChannel.Writer, cancellationToken);
+        var embedTask = embedWorker.RunAsync(_chunksChannel.Reader, _embeddedChunksChannel.Writer, cancellationToken);
+        var dummyChannel = Channel.CreateUnbounded<object>();
+        var storeTask = storeWorker.RunAsync(_embeddedChunksChannel.Reader, dummyChannel.Writer, cancellationToken);
 
         // Producer
         foreach (var file in files)
         {
-            var chunks = await ParseFileAsync(file, cancellationToken);
-            var fileResult = new FileProcessingResult
-            {
-                Status = FileProcessingStatus.Success,
-                ChunksProcessed = chunks.Count,
-                Chunks = chunks
-            };
-            await parseChannel.Writer.WriteAsync(fileResult, cancellationToken);
+            var fileInfo = new System.IO.FileInfo(file);
+            var language = DetectLanguageFromPath(file);
+            if (language == Language.Unknown) continue;
+            var fileModel = new FileModel(
+                path: file,
+                mtime: new DateTimeOffset(fileInfo.LastWriteTimeUtc).ToUnixTimeSeconds(),
+                language: language,
+                sizeBytes: fileInfo.Length,
+                id: null,
+                contentHash: null
+            );
+            var result = new FileProcessingResult { File = fileModel };
+            await _fileResultsChannel.Writer.WriteAsync(result, cancellationToken);
         }
-        parseChannel.Writer.Complete();
+        _fileResultsChannel.Writer.Complete();
         _logger.LogInformation("Parse input completed");
 
         // Await
-        await Task.WhenAll(parseWorkers.Concat(embedWorkers ?? Enumerable.Empty<Task>()).Concat(storeWorkers));
+        await Task.WhenAll(parseTask, embedTask, storeTask);
 
         // Collect results
         return await CollectPipelineResultsAsync();
@@ -890,5 +891,25 @@ public class IndexingCoordinator : IIndexingCoordinator
             foreach(var sub in subdirs) directories.Enqueue(sub);
             _logger.LogDebug("Processed dir {Dir}, queued {Count} subdirs", dir, directories.Count);
         }
+    }
+
+    /// <summary>
+    /// Detects programming language from file path.
+    /// </summary>
+    private static Language DetectLanguageFromPath(string filePath)
+    {
+        var extension = System.IO.Path.GetExtension(filePath).ToLowerInvariant();
+
+        return extension switch
+        {
+            ".cs" => Language.CSharp,
+            ".js" => Language.JavaScript,
+            ".ts" => Language.TypeScript,
+            ".py" => Language.Python,
+            ".java" => Language.Java,
+            ".go" => Language.Go,
+            ".rs" => Language.Rust,
+            _ => Language.Unknown
+        };
     }
 }
