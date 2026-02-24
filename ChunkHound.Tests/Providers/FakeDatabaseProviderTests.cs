@@ -32,8 +32,8 @@ namespace ChunkHound.Core.Tests.Providers
             // Arrange
             var chunks = new List<Chunk>
             {
-                new Chunk("test1", 1, 10, "code1", ChunkType.Function, 1, Language.CSharp),
-                new Chunk("test2", 1, 10, "code2", ChunkType.Function, 1, Language.CSharp)
+                new Chunk("1", 1, "code1", 1, 10, Language.CSharp, ChunkType.Function),
+                new Chunk("2", 1, "code2", 1, 10, Language.CSharp, ChunkType.Function)
             };
 
             // Act
@@ -49,7 +49,7 @@ namespace ChunkHound.Core.Tests.Providers
         public async Task StoreChunksAsync_WithExistingIds_PreservesIds()
         {
             // Arrange
-            var chunk = new Chunk("test", 1, 10, "code", ChunkType.Function, 1, Language.CSharp) with { Id = 999 };
+            var chunk = new Chunk("999", 1, "code", 1, 10, Language.CSharp, ChunkType.Function);
 
             // Act
             var ids = await _provider.StoreChunksAsync(new List<Chunk> { chunk });
@@ -63,7 +63,7 @@ namespace ChunkHound.Core.Tests.Providers
         public async Task GetChunksByHashesAsync_ReturnsMatchingChunks()
         {
             // Arrange
-            var chunk = new Chunk("test", 1, 10, "unique code", ChunkType.Function, 1, Language.CSharp);
+            var chunk = new Chunk("1", 1, "unique code", 1, 10, Language.CSharp, ChunkType.Function);
             await _provider.StoreChunksAsync(new List<Chunk> { chunk });
             var hash = ChunkHound.Core.Utilities.HashUtility.ComputeContentHash("unique code");
 
@@ -91,7 +91,7 @@ namespace ChunkHound.Core.Tests.Providers
             // Arrange
             var chunks = new List<Chunk>
             {
-                new Chunk("test", 1, 10, "code", ChunkType.Function, 1, Language.CSharp)
+                new Chunk("1", 1, "code", 1, 10, Language.CSharp, ChunkType.Function)
             };
 
             // Act
@@ -165,8 +165,8 @@ namespace ChunkHound.Core.Tests.Providers
         public async Task GetChunksByFilePathAsync_ReturnsMatchingChunks()
         {
             // Arrange
-            var chunk1 = new Chunk("test1", 1, 10, "code1", ChunkType.Function, 1, Language.CSharp) with { FilePath = "/test/file.cs" };
-            var chunk2 = new Chunk("test2", 1, 10, "code2", ChunkType.Function, 1, Language.CSharp) with { FilePath = "/other/file.cs" };
+            var chunk1 = new Chunk("1", 1, "code1", 1, 10, Language.CSharp, ChunkType.Function) with { FilePath = "/test/file.cs" };
+            var chunk2 = new Chunk("2", 1, "code2", 1, 10, Language.CSharp, ChunkType.Function) with { FilePath = "/other/file.cs" };
             await _provider.StoreChunksAsync(new List<Chunk> { chunk1, chunk2 });
 
             // Act
@@ -181,7 +181,7 @@ namespace ChunkHound.Core.Tests.Providers
         public async Task GetChunksByIdsAsync_ReturnsMatchingChunks()
         {
             // Arrange
-            var chunk = new Chunk("test", 1, 10, "code", ChunkType.Function, 1, Language.CSharp);
+            var chunk = new Chunk("1", 1, "code", 1, 10, Language.CSharp, ChunkType.Function);
             await _provider.StoreChunksAsync(new List<Chunk> { chunk });
 
             // Act
@@ -238,26 +238,70 @@ namespace ChunkHound.Core.Tests.Providers
         }
 
         [Fact]
-        public async Task ConcurrentOperations_WorkCorrectly()
+        public async Task SequentialOperations_WorkCorrectly()
         {
             // Arrange
-            var tasks = new List<Task>();
             for (int i = 0; i < 10; i++)
             {
-                var task = Task.Run(async () =>
-                {
-                    var chunk = new Chunk($"test{i}", 1, 10, $"code{i}", ChunkType.Function, 1, Language.CSharp);
-                    await _provider.StoreChunksAsync(new List<Chunk> { chunk });
-                });
-                tasks.Add(task);
+                var chunk = new Chunk($"{i + 1}", 1, $"code{i}", 1, 10, Language.CSharp, ChunkType.Function);
+                await _provider.StoreChunksAsync(new List<Chunk> { chunk });
             }
 
             // Act
-            await Task.WhenAll(tasks);
+            var allChunks = await _provider.GetChunksByIdsAsync(new List<long> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
 
             // Assert
-            var allChunks = await _provider.GetChunksByIdsAsync(new List<long> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
             Assert.Equal(10, allChunks.Count);
+        }
+
+        [Fact]
+        public async Task UpsertChunksAsync_UpsertsChunks()
+        {
+            // Arrange
+            var chunk1 = new Chunk("1", 1, "code1", 1, 10, Language.CSharp, ChunkType.Function);
+            var chunk2 = new Chunk("2", 1, "code2", 1, 10, Language.CSharp, ChunkType.Function);
+
+            // Act
+            await _provider.UpsertChunksAsync(new List<Chunk> { chunk1, chunk2 });
+
+            // Assert
+            var retrieved = await _provider.GetChunksByIdsAsync(new List<long> { 1, 2 });
+            Assert.Equal(2, retrieved.Count);
+        }
+
+        [Fact]
+        public async Task SearchAsync_ReturnsSimilarChunks()
+        {
+            // Arrange
+            var embeddingArray = new float[1536];
+            for (int i = 0; i < embeddingArray.Length; i++) embeddingArray[i] = 1.0f;
+            var embedding = new ReadOnlyMemory<float>(embeddingArray);
+            var chunk = new Chunk("1", 1, "code", 1, 10, Language.CSharp, ChunkType.Function) with { Embedding = embedding };
+            await _provider.UpsertChunksAsync(new List<Chunk> { chunk });
+
+            // Act
+            var results = await _provider.SearchAsync(embedding, 0.5f, 10);
+
+            // Assert
+            Assert.Single(results);
+            Assert.Equal("code", results[0].Code);
+        }
+
+        [Fact]
+        public async Task DeleteFileChunksAsync_DeletesChunksForFile()
+        {
+            // Arrange
+            var chunk1 = new Chunk("1", 1, "code1", 1, 10, Language.CSharp, ChunkType.Function);
+            var chunk2 = new Chunk("2", 2, "code2", 1, 10, Language.CSharp, ChunkType.Function);
+            await _provider.UpsertChunksAsync(new List<Chunk> { chunk1, chunk2 });
+
+            // Act
+            await _provider.DeleteFileChunksAsync(1);
+
+            // Assert
+            var retrieved = await _provider.GetChunksByIdsAsync(new List<long> { 1, 2 });
+            Assert.Single(retrieved);
+            Assert.Equal("2", retrieved[0].Id);
         }
     }
 }

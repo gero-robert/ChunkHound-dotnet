@@ -241,7 +241,7 @@ namespace ChunkHound.Core.Tests.Providers
         /// </summary>
         private async Task TestStoreChunksAsyncWithExistingIdsPreservesIds(LanceDBProvider provider)
         {
-            var chunk = new Chunk("test", 1, 10, "code", ChunkType.Function, 1, Language.CSharp) with { Id = 999 };
+            var chunk = new Chunk("999", 1, "code", 1, 10, Language.CSharp, ChunkType.Function, "test");
 
             // Act
             var ids = await provider.StoreChunksAsync(new List<Chunk> { chunk });

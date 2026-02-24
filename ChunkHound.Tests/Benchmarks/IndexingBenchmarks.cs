@@ -51,7 +51,7 @@ namespace ChunkHound.Core.Tests.Benchmarks
             };
             var parserFactory = new ParserFactory(parsers);
             var splitter = new RecursiveChunkSplitter(_languageConfigProvider);
-            _parser = new UniversalParser(NullLogger<UniversalParser>.Instance, _languageConfigProvider, parserFactory, splitter);
+            _parser = new UniversalParser(NullLogger<UniversalParser>.Instance, _languageConfigProvider, new Dictionary<Language, IUniversalParser>(), parserFactory, splitter);
 
             // Generate test data
             _testChunks = GenerateTestChunks(1000);
@@ -175,13 +175,14 @@ namespace ChunkHound.Core.Tests.Benchmarks
             for (int i = 0; i < count; i++)
             {
                 chunks.Add(new Chunk(
-                    symbol: $"Function{i}",
+                    id: Guid.NewGuid().ToString(),
+                    fileId: 1,
+                    content: $"public void Function{i}() {{ Console.WriteLine(\"{i}\"); }}",
                     startLine: 1,
                     endLine: 10,
-                    code: $"public void Function{i}() {{ Console.WriteLine(\"{i}\"); }}",
+                    language: Language.CSharp,
                     chunkType: ChunkType.Function,
-                    fileId: 1,
-                    language: Language.CSharp));
+                    symbol: $"Function{i}"));
             }
             return chunks;
         }

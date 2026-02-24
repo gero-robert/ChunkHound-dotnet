@@ -8,8 +8,7 @@ namespace ChunkHound.Providers;
 /// </summary>
 public class FakeDatabaseProvider : Core.IDatabaseProvider
 {
-    private readonly ConcurrentDictionary<string, Core.Chunk> _chunksByHash = new();
-    private readonly ConcurrentDictionary<int, Core.Chunk> _chunksById = new();
+    private readonly ConcurrentDictionary<string, Core.Chunk> _chunks = new();
     private int _nextId = 1;
 
     /// <summary>
@@ -32,12 +31,10 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
 
         foreach (var chunk in chunks)
         {
-            var hash = Core.Utilities.HashUtility.ComputeContentHash(chunk.Code);
             var chunkWithId = !string.IsNullOrEmpty(chunk.Id) ? chunk : chunk with { Id = (Interlocked.Increment(ref _nextId) - 1).ToString() };
 
-            _chunksByHash[hash] = chunkWithId;
+            _chunks[chunkWithId.Id] = chunkWithId;
             var idInt = int.Parse(chunkWithId.Id);
-            _chunksById[idInt] = chunkWithId;
             ids.Add(idInt);
         }
 
@@ -54,9 +51,10 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
     {
         var result = new List<Core.Chunk>();
 
-        foreach (var hash in hashes)
+        foreach (var chunk in _chunks.Values)
         {
-            if (_chunksByHash.TryGetValue(hash, out var chunk))
+            var hash = Core.Utilities.HashUtility.ComputeContentHash(chunk.Code);
+            if (hashes.Contains(hash))
             {
                 result.Add(chunk);
             }
@@ -121,7 +119,7 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
     public async Task<List<Core.Chunk>> GetChunksByFilePathAsync(string filePath, CancellationToken cancellationToken = default)
     {
         await Task.Delay(1, cancellationToken);
-        return _chunksById.Values.Where(c => c.FilePath == filePath).ToList();
+        return _chunks.Values.Where(c => c.FilePath == filePath).ToList();
     }
 
     /// <summary>
@@ -130,7 +128,7 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
     public async Task<List<Core.Chunk>> GetChunksByIdsAsync(IReadOnlyList<long> chunkIds, CancellationToken cancellationToken = default)
     {
         await Task.Delay(1, cancellationToken);
-        return chunkIds.Where(id => _chunksById.ContainsKey((int)id)).Select(id => _chunksById[(int)id]).ToList();
+        return chunkIds.Where(id => _chunks.ContainsKey(id.ToString())).Select(id => _chunks[id.ToString()]).ToList();
     }
 
     /// <summary>
@@ -164,9 +162,75 @@ public class FakeDatabaseProvider : Core.IDatabaseProvider
     /// </summary>
     public Task ClearAllDataAsync()
     {
-        _chunksByHash.Clear();
-        _chunksById.Clear();
+        _chunks.Clear();
         _nextId = 1;
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Upserts chunks into the in-memory database.
+    /// </summary>
+    /// <param name="chunks">The chunks to upsert.</param>
+    public async Task UpsertChunksAsync(List<Core.Chunk> chunks)
+    {
+        foreach (var chunk in chunks)
+        {
+            _chunks[chunk.Id] = chunk;
+        }
+        await Task.Delay(1); // Simulate minimal latency
+    }
+
+    /// <summary>
+    /// Searches for chunks similar to the query embedding.
+    /// </summary>
+    /// <param name="queryEmbedding">The query embedding.</param>
+    /// <param name="threshold">The similarity threshold.</param>
+    /// <param name="topK">The maximum number of results.</param>
+    /// <returns>The similar chunks.</returns>
+    public async Task<List<Core.Chunk>> SearchAsync(ReadOnlyMemory<float> queryEmbedding, float threshold, int topK)
+    {
+        var results = new List<(Core.Chunk chunk, float similarity)>();
+
+        foreach (var chunk in _chunks.Values)
+        {
+            if (chunk.Embedding.HasValue)
+            {
+                var similarity = CosineSimilarity(queryEmbedding.Span, chunk.Embedding.Value.Span);
+                if (similarity > threshold)
+                {
+                    results.Add((chunk, similarity));
+                }
+            }
+        }
+
+        return results.OrderByDescending(r => r.similarity).Take(topK).Select(r => r.chunk).ToList();
+    }
+
+    /// <summary>
+    /// Deletes chunks for a specific file.
+    /// </summary>
+    /// <param name="fileId">The file ID.</param>
+    public async Task DeleteFileChunksAsync(int fileId)
+    {
+        var keysToRemove = _chunks.Where(kvp => kvp.Value.FileId == fileId).Select(kvp => kvp.Key).ToList();
+        foreach (var key in keysToRemove)
+        {
+            _chunks.TryRemove(key, out _);
+        }
+        await Task.Delay(1); // Simulate minimal latency
+    }
+
+    private static float CosineSimilarity(ReadOnlySpan<float> a, ReadOnlySpan<float> b)
+    {
+        if (a.Length != b.Length) return 0;
+
+        float dotProduct = 0, normA = 0, normB = 0;
+        for (int i = 0; i < a.Length; i++)
+        {
+            dotProduct += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+        return normA == 0 || normB == 0 ? 0 : dotProduct / (MathF.Sqrt(normA) * MathF.Sqrt(normB));
     }
 }

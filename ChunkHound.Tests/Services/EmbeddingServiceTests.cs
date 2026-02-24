@@ -278,7 +278,7 @@ public class EmbeddingServiceTests : IDisposable
     }
 
     private static Chunk CreateTestChunk() =>
-        new Chunk("TestFunc", 1, 10, "function test() {}", ChunkType.Function, 1, Language.JavaScript, 1);
+        new Chunk("TestFunc", 1, "function test() {}", 1, 10, Language.JavaScript, ChunkType.Function, "TestFunc");
 
     public void Dispose()
     {

@@ -57,13 +57,14 @@ public static class TestDataGenerator
             var code = string.Join("\n", lines.Skip(startLine - 1).Take(endLine - startLine + 1));
 
             var chunk = new Core.Chunk(
-                symbol: $"Function{i}",
+                id: Guid.NewGuid().ToString(),
+                fileId: file.Id ?? 0,
+                content: code,
                 startLine: startLine,
                 endLine: endLine,
-                code: code,
-                chunkType: ChunkType.Function,
-                fileId: file.Id ?? 0,
                 language: file.Language,
+                chunkType: ChunkType.Function,
+                symbol: $"Function{i}",
                 filePath: file.Path
             );
 

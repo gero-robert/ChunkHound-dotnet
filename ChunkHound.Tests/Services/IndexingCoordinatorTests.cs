@@ -128,6 +128,32 @@ namespace ChunkHound.Core.Tests.Services
             Assert.True(true);
         }
 
+        [Fact]
+        public async Task IndexWithMocks_NoHang()
+        {
+            // Arrange
+            var mockDb = new ChunkHound.Providers.FakeDatabaseProvider();
+            var mockEmbed = new ChunkHound.Providers.FakeConstantEmbeddingProvider();
+            var mockParser = new Mock<IUniversalParser>();
+            mockParser.Setup(p => p.ParseAsync(It.IsAny<File>()))
+                      .ReturnsAsync(new List<Chunk> { new Chunk("1", 1, "code", 1, 1, Language.CSharp, ChunkType.Function) });
+            var parsers = new Dictionary<Language, IUniversalParser>
+            {
+                [Language.CSharp] = mockParser.Object
+            };
+            var coord = new IndexingCoordinator(mockDb, _baseDirectory, mockEmbed, parsers, null, null, _loggerMock.Object);
+            var testDir = Path.Combine(_baseDirectory, "testdir");
+            Directory.CreateDirectory(testDir);
+            var testFile = Path.Combine(testDir, "test.cs");
+            System.IO.File.WriteAllText(testFile, "class Test {}");
+
+            // Act
+            await coord.IndexAsync(testDir);
+
+            // Assert
+            Assert.True(true); // Should not hang
+        }
+
         /// <summary>
         /// Tests that ProcessFileAsync successfully processes a C# file with a parser.
         /// This validates the file processing pipeline including language detection and parsing.

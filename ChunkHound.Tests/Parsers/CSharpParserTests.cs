@@ -52,7 +52,7 @@ namespace TestNamespace
 }";
             await System.IO.File.WriteAllTextAsync(testFile, content);
 
-            var file = new File(
+            var file = new Core.File(
                 id: 1,
                 path: testFile,
                 mtime: 1234567890,

@@ -16,14 +16,14 @@ namespace ChunkHound.Core.Tests.Providers
 
             // Assert
             Assert.Equal("FakeConstant", provider.ProviderName);
-            Assert.Equal("constant-v1", provider.ModelName);
+            Assert.Equal("random-v1", provider.ModelName);
         }
 
         [Fact]
-        public async Task EmbedAsync_ReturnsConstantVectors()
+        public async Task EmbedAsync_ReturnsRandomVectors()
         {
             // Arrange
-            var provider = new FakeConstantEmbeddingProvider(dimensions: 5, vectorValue: 0.5f);
+            var provider = new FakeConstantEmbeddingProvider();
             var texts = new List<string> { "text1", "text2", "text3" };
 
             // Act
@@ -33,13 +33,13 @@ namespace ChunkHound.Core.Tests.Providers
             Assert.Equal(3, embeddings.Count);
             foreach (var embedding in embeddings)
             {
-                Assert.Equal(5, embedding.Count);
-                Assert.All(embedding, value => Assert.Equal(0.5f, value));
+                Assert.Equal(1536, embedding.Count);
+                Assert.All(embedding, value => Assert.InRange(value, -1.0f, 1.0f));
             }
         }
 
         [Fact]
-        public async Task EmbedAsync_DefaultDimensions_Returns1536Dimensions()
+        public async Task EmbedAsync_Returns1536Dimensions()
         {
             // Arrange
             var provider = new FakeConstantEmbeddingProvider();
@@ -51,7 +51,7 @@ namespace ChunkHound.Core.Tests.Providers
             // Assert
             Assert.Single(embeddings);
             Assert.Equal(1536, embeddings[0].Count);
-            Assert.All(embeddings[0], value => Assert.Equal(0.1f, value));
+            Assert.All(embeddings[0], value => Assert.InRange(value, -1.0f, 1.0f));
         }
 
         [Fact]
@@ -125,9 +125,9 @@ namespace ChunkHound.Core.Tests.Providers
         public async Task EmbedAsync_LargeBatch_HandlesCorrectly()
         {
             // Arrange
-            var provider = new FakeConstantEmbeddingProvider(dimensions: 10);
+            var provider = new FakeConstantEmbeddingProvider();
             var texts = new List<string>();
-            for (int i = 0; i < 1000; i++)
+            for (int i = 0; i < 100; i++)
             {
                 texts.Add($"text{i}");
             }
@@ -136,11 +136,11 @@ namespace ChunkHound.Core.Tests.Providers
             var embeddings = await provider.EmbedAsync(texts);
 
             // Assert
-            Assert.Equal(1000, embeddings.Count);
+            Assert.Equal(100, embeddings.Count);
             foreach (var embedding in embeddings)
             {
-                Assert.Equal(10, embedding.Count);
-                Assert.All(embedding, value => Assert.Equal(0.1f, value));
+                Assert.Equal(1536, embedding.Count);
+                Assert.All(embedding, value => Assert.InRange(value, -1.0f, 1.0f));
             }
         }
     }

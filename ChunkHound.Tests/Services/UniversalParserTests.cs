@@ -20,7 +20,7 @@ namespace ChunkHound.Services.Tests
         {
             _mockLogger = new Mock<ILogger<UniversalParser>>();
             var configProvider = new ChunkHound.Services.LanguageConfigProvider();
-            _parser = new UniversalParser(_mockLogger.Object, configProvider);
+            _parser = new UniversalParser(_mockLogger.Object, configProvider, new Dictionary<Language, IUniversalParser>());
         }
 
         /// <summary>
