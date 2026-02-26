@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Moq;
 using FileModel = ChunkHound.Core.File;
+using System.Collections.Generic;
 
 namespace ChunkHound.Tests.Workers;
 
@@ -233,6 +234,108 @@ namespace TestNamespace
             "js" => "function testFunction() {\n    return true;\n}\n\nconst testClass = {\n    method() { }\n};",
             _ => "test content"
         };
+    }
+
+    /// <summary>
+    /// End-to-end test that indexes code files, embeds chunks, stores them, and retrieves similar chunks.
+    /// Validates the complete indexing pipeline from file to semantic search results.
+    /// </summary>
+    [Fact]
+    public async Task EndToEnd_IndexEmbedRetrieve_Test()
+    {
+        // Arrange - Create sample code files
+        var sampleCode = @"
+using System;
+
+namespace SampleNamespace
+{
+    public class Calculator
+    {
+        public int Add(int a, int b)
+        {
+            return a + b;
+        }
+
+        public int Multiply(int a, int b)
+        {
+            return a * b;
+        }
+    }
+}";
+        var filePath = CreateTestFile("Calculator.cs", sampleCode);
+        var file = new FileProcessingResult
+        {
+            File = new ChunkHound.Core.File(filePath, 0, Language.CSharp, sampleCode.Length),
+            Status = FileProcessingStatus.Success
+        };
+
+        // Setup parsers
+        var languageConfig = new LanguageConfigProvider();
+        var parsers = new Dictionary<Language, IUniversalParser>();
+        var mockParser = new Mock<IUniversalParser>();
+        var expectedChunks = new List<Chunk>
+        {
+            new Chunk("Calculator", 1, "public class Calculator\n    {\n        public int Add(int a, int b)\n        {\n            return a + b;\n        }", 6, 10, Language.CSharp, ChunkType.Class, "Calculator", filePath)
+        };
+        mockParser.Setup(p => p.ParseAsync(It.IsAny<ChunkHound.Core.File>())).ReturnsAsync(expectedChunks);
+        parsers[Language.CSharp] = mockParser.Object;
+
+        // Setup embedding provider
+        var embedProvider = new FakeConstantEmbeddingProvider();
+
+        // Setup database provider (use FakeDatabaseProvider for retrieval capability)
+        var dbProvider = new FakeDatabaseProvider();
+
+        // Create IndexingCoordinator as end user would
+        var baseDirectory = Path.GetDirectoryName(filePath)!;
+        var coordinatorLogger = new Mock<ILogger<IndexingCoordinator>>();
+        var coordinator = new IndexingCoordinator(
+            dbProvider,
+            baseDirectory,
+            embedProvider,
+            parsers,
+            null, // chunkCacheService
+            null, // config
+            coordinatorLogger.Object, // logger
+            null // progress
+        );
+
+        // Act - Run full indexing flow as end user would
+        var cts = new CancellationTokenSource(30000); // 30 second timeout
+        await coordinator.ProcessDirectoryAsync(baseDirectory, new List<string> { "*.cs" }, null, cts.Token);
+
+        // Assert - Verify chunks were stored with embeddings
+        var storedChunks = await dbProvider.GetChunksByFilePathAsync(filePath);
+        Assert.Equal(expectedChunks.Count, storedChunks.Count);
+
+        // Verify embeddings were added
+        foreach (var chunk in storedChunks)
+        {
+            Assert.True(chunk.Embedding.HasValue, "Chunk should have embedding");
+        }
+
+        // Act - Perform semantic search
+        var queryEmbedding = new float[1536];
+        for (int i = 0; i < queryEmbedding.Length; i++) queryEmbedding[i] = 0.1f;
+        var searchResults = await dbProvider.SearchAsync(queryEmbedding, 0.5f, 10);
+
+        // Assert - Since FakeConstantEmbeddingProvider returns constant embeddings,
+        // all chunks should have similarity 1.0 and be returned
+        Assert.Equal(expectedChunks.Count, searchResults.Count);
+        Assert.Contains(searchResults[0], expectedChunks, new ChunkComparer());
+    }
+
+    private class ChunkComparer : IEqualityComparer<Chunk>
+    {
+        public bool Equals(Chunk x, Chunk y)
+        {
+            return x.Id == y.Id && x.Code == y.Code && x.ChunkType == y.ChunkType;
+        }
+
+        public int GetHashCode(Chunk obj)
+        {
+            return HashCode.Combine(obj.Id, obj.Code, obj.ChunkType);
+        }
     }
 
     public void Dispose()

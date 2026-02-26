@@ -41,10 +41,11 @@ public class FakeConstantEmbeddingProvider : Core.IEmbeddingProvider
 
     private List<float> GenerateRandomEmbedding()
     {
+        // Return constant embedding for testing
         var embedding = new float[1536];
         for (int i = 0; i < embedding.Length; i++)
         {
-            embedding[i] = (float)(_random.NextDouble() * 2 - 1); // Random between -1 and 1
+            embedding[i] = 0.1f; // Constant value
         }
         return embedding.ToList();
     }
